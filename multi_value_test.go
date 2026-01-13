@@ -63,7 +63,6 @@ func TestMultiValueReturns(t *testing.T) {
 		results, err := fn.Call(ctx, wasmtime.EncodeI32(5))
 		require.NoError(t, err)
 		require.Len(t, results, 0, "Expected 0 results")
-		t.Logf("✓ Void function returned %d results", len(results))
 	})
 
 	t.Run("one result", func(t *testing.T) {
@@ -74,7 +73,6 @@ func TestMultiValueReturns(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, results, 1, "Expected 1 result")
 		require.Equal(t, int32(15), wasmtime.DecodeI32(results[0]))
-		t.Logf("✓ Single-value function returned %d results: %v", len(results), wasmtime.DecodeI32(results[0]))
 	})
 
 	t.Run("two results", func(t *testing.T) {
@@ -90,6 +88,5 @@ func TestMultiValueReturns(t *testing.T) {
 
 		require.Equal(t, int32(7), sum, "Expected sum=7")
 		require.Equal(t, int32(12), product, "Expected product=12")
-		t.Logf("✓ Multi-value function returned %d results: sum=%d, product=%d", len(results), sum, product)
 	})
 }

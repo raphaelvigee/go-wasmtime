@@ -150,7 +150,7 @@ func (hmb *hostModuleBuilder) Instantiate(ctx context.Context) error {
 		defer cleanup()
 
 		// Register function in global registry
-		funcID, callbackPtr := globalRegistry.register(fn, storeCtx, nil)
+		funcID, callbackPtr := globalRegistry.register(fn, storeCtx, nil, ctx)
 
 		// Get callback pointer
 

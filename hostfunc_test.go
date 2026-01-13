@@ -39,9 +39,7 @@ func TestHostFunctionBuilder(t *testing.T) {
 	t.Run("add_function_with_goFunc", func(t *testing.T) {
 		builder := r.NewHostModuleBuilder("env")
 
-		called := false
 		hostFunc := func(ctx context.Context, stack []uint64) {
-			called = true
 			if len(stack) >= 2 {
 				stack[1] = stack[0]
 			}
@@ -62,8 +60,6 @@ func TestHostFunctionBuilder(t *testing.T) {
 		assert.Equal(t, api.ValueTypeI32, fn.paramTypes[0])
 		assert.Len(t, fn.resultTypes, 1)
 		assert.Equal(t, api.ValueTypeI32, fn.resultTypes[0])
-
-		_ = called
 	})
 
 	t.Run("add_function_with_goFunction", func(t *testing.T) {
@@ -262,7 +258,6 @@ func TestHostFunctionIntegration(t *testing.T) {
 		b := DecodeI32(stack[1])
 		result := a + b
 		stack[2] = EncodeI32(result)
-		t.Logf("host_add(%d, %d) = %d", a, b, result)
 	}).Export("host_add")
 
 	// Host function: log a number (no return value)
@@ -272,7 +267,6 @@ func TestHostFunctionIntegration(t *testing.T) {
 	).WithGoFunc(func(ctx context.Context, stack []uint64) {
 		logCalled = true
 		loggedValue = DecodeI32(stack[0])
-		t.Logf("host_log(%d) called", loggedValue)
 	}).Export("host_log")
 
 	// Instantiate the host module to make functions available

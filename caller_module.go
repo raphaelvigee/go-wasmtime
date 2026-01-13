@@ -18,7 +18,7 @@ func (cm *callerModule) Name() string {
 }
 
 func (cm *callerModule) ExportedFunction(name string) api.Function {
-	return nil // Not needed for memory access test
+	return nil
 }
 
 func (cm *callerModule) ExportedFunctionDefinitions() map[string]api.FunctionDefinition {

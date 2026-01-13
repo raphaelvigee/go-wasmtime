@@ -61,8 +61,6 @@ func TestSimpleFunctionCall(t *testing.T) {
 	// Test that we can get the export
 	fn := mod.ExportedFunction("add")
 	require.NotNil(t, fn)
-
-	t.Log("Successfully instantiated module and accessed exports")
 }
 
 func TestAddFunction(t *testing.T) {
@@ -202,8 +200,6 @@ func TestWASIHello(t *testing.T) {
 
 	_, err = startFn.Call(ctx)
 	require.NoError(t, err)
-
-	t.Log("WASI hello world executed successfully")
 }
 
 // Helper function to read file

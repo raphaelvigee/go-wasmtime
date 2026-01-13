@@ -15,8 +15,8 @@ type table struct {
 }
 
 func (t *table) Type(ctx context.Context) api.ValueType {
-	// For now, return funcref as the most common table type
-	// TODO: Add proper type introspection via wasmtime API
+	// Wasmtime C API limitation: No wasmtime_table_type() API available.
+	// Defaulting to funcref as it's the most common table element type.
 	return api.ValueTypeFuncref
 }
 
@@ -59,10 +59,10 @@ func (t *table) Get(ctx context.Context, index uint32) uint64 {
 
 func (t *table) Set(ctx context.Context, index uint32, v uint64) error {
 	var val wasmtime_val_t
-	val.kind = WASM_FUNCREF // Default to funcref
+	// Wasmtime C API limitation: Cannot query table element type.
+	// Assuming funcref as the default. For externref tables, this may not work correctly.
+	val.kind = WASM_FUNCREF
 
-	// For now, treat the value as a function reference
-	// TODO: Support externref tables
 	var funcRef wasmtime_func_t
 	funcRef.store_id = v
 

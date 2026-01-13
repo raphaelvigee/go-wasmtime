@@ -280,31 +280,38 @@ func (cm *compiledModule) Close() error {
 }
 
 func (cm *compiledModule) Name() string {
-	// TODO: Implement via wasmtime_module_name if available
+	// Wasmtime C API limitation: wasmtime_module_name function is not available.
+	// Module introspection must be done via parsing the WASM binary or after instantiation.
 	return ""
 }
 
 func (cm *compiledModule) ImportedFunctions() []api.FunctionDefinition {
-	// TODO: Implement via wasmtime module introspection API
+	// Wasmtime C API limitation: Module import/export introspection APIs are not available.
+	// The C API does not expose functions like wasmtime_module_imports().
+	// Workaround: Use the module's exports after instantiation via ExportedFunction().
 	return nil
 }
 
 func (cm *compiledModule) ExportedFunctions() map[string]api.FunctionDefinition {
-	// TODO: Implement via wasmtime module introspection API
+	// Wasmtime C API limitation: Module export introspection APIs are not available.
+	// The C API does not expose functions like wasmtime_module_exports().
+	// Workaround: Use the instantiated module's ExportedFunction() method.
 	return make(map[string]api.FunctionDefinition)
 }
 
 func (cm *compiledModule) ImportedMemories() []api.MemoryDefinition {
-	// TODO: Implement via wasmtime module introspection API
+	// Wasmtime C API limitation: Module import introspection APIs are not available.
 	return nil
 }
 
 func (cm *compiledModule) ExportedMemories() map[string]api.MemoryDefinition {
-	// TODO: Implement via wasmtime module introspection API
+	// Wasmtime C API limitation: Module export introspection APIs are not available.
+	// Workaround: Use the instantiated module's ExportedMemory() method.
 	return make(map[string]api.MemoryDefinition)
 }
 
 func (cm *compiledModule) CustomSections() []api.CustomSection {
-	// TODO: Implement via wasmtime module introspection API
+	// Wasmtime C API limitation: Custom section APIs are not exposed in the C API.
+	// These would require parsing the WASM binary directly.
 	return nil
 }

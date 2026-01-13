@@ -40,6 +40,7 @@ var (
 	wasmtime_error_message     func(wasmtime_error_t, *wasm_byte_vec_t)
 	wasmtime_error_delete      func(wasmtime_error_t)
 	wasmtime_error_exit_status func(wasmtime_error_t, *int32) bool
+	wasm_trap_new              func(*byte, uintptr) wasm_trap_t
 	wasm_trap_message          func(wasm_trap_t, *wasm_byte_vec_t)
 	wasm_trap_delete           func(wasm_trap_t)
 
@@ -57,7 +58,7 @@ var (
 	wasmtime_linker_new         func(wasm_engine_t) wasmtime_linker_t
 	wasmtime_linker_delete      func(wasmtime_linker_t)
 	wasmtime_linker_define_wasi func(wasmtime_linker_t) wasmtime_error_t
-wasmtime_caller_export_get     func(uintptr, *byte, uintptr, *wasmtime_extern_t) bool
+	wasmtime_caller_export_get  func(uintptr, *byte, uintptr, *wasmtime_extern_t) bool
 
 	wasmtime_linker_instantiate func(wasmtime_linker_t, wasmtime_context_t, wasmtime_module_t, *wasmtime_instance_t, **wasm_trap_t) wasmtime_error_t
 
@@ -78,8 +79,8 @@ wasmtime_caller_export_get     func(uintptr, *byte, uintptr, *wasmtime_extern_t)
 	wasmtime_table_grow func(wasmtime_context_t, *wasmtime_table_t, uint32, *wasmtime_val_t, *uint32) wasmtime_error_t
 
 	// Function pointers - Host Functions
-	wasmtime_func_new                  func(wasmtime_context_t, wasm_functype_t, uintptr, uintptr, uintptr, *wasmtime_func_t)
-	wasmtime_linker_define             func(wasmtime_linker_t, wasmtime_context_t, *byte, uintptr, *byte, uintptr, *wasmtime_extern_t) wasmtime_error_t
+	wasmtime_func_new      func(wasmtime_context_t, wasm_functype_t, uintptr, uintptr, uintptr, *wasmtime_func_t)
+	wasmtime_linker_define func(wasmtime_linker_t, wasmtime_context_t, *byte, uintptr, *byte, uintptr, *wasmtime_extern_t) wasmtime_error_t
 
 	wasm_functype_new                  func(*wasm_valtype_vec_t, *wasm_valtype_vec_t) wasm_functype_t
 	wasm_valtype_new                   func(uint8) wasm_valtype_t
@@ -156,6 +157,7 @@ func registerFunctions() error {
 	purego.RegisterLibFunc(&wasmtime_error_message, libHandle, "wasmtime_error_message")
 	purego.RegisterLibFunc(&wasmtime_error_delete, libHandle, "wasmtime_error_delete")
 	purego.RegisterLibFunc(&wasmtime_error_exit_status, libHandle, "wasmtime_error_exit_status")
+	purego.RegisterLibFunc(&wasm_trap_new, libHandle, "wasm_trap_new")
 	purego.RegisterLibFunc(&wasm_trap_message, libHandle, "wasm_trap_message")
 	purego.RegisterLibFunc(&wasm_trap_delete, libHandle, "wasm_trap_delete")
 

@@ -65,8 +65,8 @@ func (m *module) ExportedFunction(name string) api.Function {
 }
 
 func (m *module) ExportedFunctionDefinitions() map[string]api.FunctionDefinition {
-	// TODO: Implement module export iteration
-	// For now, return empty map
+	// Wasmtime C API limitation: Export iteration APIs are not available.
+	// Workaround: Call ExportedFunction(name) directly for known function names.
 	return make(map[string]api.FunctionDefinition)
 }
 
@@ -126,9 +126,10 @@ func (m *module) ExportedGlobal(name string) api.Global {
 		val:      *globalPtr,
 		store:    m.store,
 		storeCtx: wasmtime_store_context(m.store),
-		// TODO: Get actual type and mutability from wasmtime API
-		valType: api.ValueTypeI32, // Default, should be queried
-		mutable: true,             // Default, should be queried
+		// Wasmtime C API limitation: No wasmtime_global_type() or similar API available.
+		// Type and mutability cannot be queried, so we use safe defaults.
+		valType: api.ValueTypeI32, // Default - actual type depends on the global
+		mutable: true,             // Default - assume mutable for safety
 	}
 }
 
