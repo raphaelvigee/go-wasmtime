@@ -65,6 +65,16 @@ var (
 	wasmtime_memory_size      func(wasmtime_context_t, *wasmtime_memory_t) uint64
 	wasmtime_memory_grow      func(wasmtime_context_t, *wasmtime_memory_t, uint64, *uint64) wasmtime_error_t
 
+	// Function pointers - Global
+	wasmtime_global_get func(wasmtime_context_t, *wasmtime_global_t, *wasmtime_val_t)
+	wasmtime_global_set func(wasmtime_context_t, *wasmtime_global_t, *wasmtime_val_t)
+
+	// Function pointers - Table
+	wasmtime_table_size func(wasmtime_context_t, *wasmtime_table_t) uint32
+	wasmtime_table_get  func(wasmtime_context_t, *wasmtime_table_t, uint32, *wasmtime_val_t) bool
+	wasmtime_table_set  func(wasmtime_context_t, *wasmtime_table_t, uint32, *wasmtime_val_t) bool
+	wasmtime_table_grow func(wasmtime_context_t, *wasmtime_table_t, uint32, *wasmtime_val_t, *uint32) wasmtime_error_t
+
 	initOnce sync.Once
 	initErr  error
 )
@@ -156,6 +166,16 @@ func registerFunctions() error {
 	purego.RegisterLibFunc(&wasmtime_memory_data_size, libHandle, "wasmtime_memory_data_size")
 	purego.RegisterLibFunc(&wasmtime_memory_size, libHandle, "wasmtime_memory_size")
 	purego.RegisterLibFunc(&wasmtime_memory_grow, libHandle, "wasmtime_memory_grow")
+
+	// Global functions
+	purego.RegisterLibFunc(&wasmtime_global_get, libHandle, "wasmtime_global_get")
+	purego.RegisterLibFunc(&wasmtime_global_set, libHandle, "wasmtime_global_set")
+
+	// Table functions
+	purego.RegisterLibFunc(&wasmtime_table_size, libHandle, "wasmtime_table_size")
+	purego.RegisterLibFunc(&wasmtime_table_get, libHandle, "wasmtime_table_get")
+	purego.RegisterLibFunc(&wasmtime_table_set, libHandle, "wasmtime_table_set")
+	purego.RegisterLibFunc(&wasmtime_table_grow, libHandle, "wasmtime_table_grow")
 
 	return nil
 }

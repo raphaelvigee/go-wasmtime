@@ -19,6 +19,9 @@ type Runtime interface {
 	// InstantiateWithWASI instantiates a compiled module with WASI support.
 	InstantiateWithWASI(ctx context.Context, compiled CompiledModule) (api.Module, error)
 
+	// NewHostModuleBuilder creates a builder for defining host modules (Go functions).
+	NewHostModuleBuilder(name string) HostModuleBuilder
+
 	// Close closes the runtime and releases resources.
 	Close(ctx context.Context) error
 }
@@ -27,14 +30,23 @@ type Runtime interface {
 type RuntimeConfig interface {
 	// WithWASI configures WASI for this runtime.
 	WithWASI(WASIConfig) RuntimeConfig
+
+	// WithCompilationCache sets the compilation cache for this runtime.
+	WithCompilationCache(cache CompilationCache) RuntimeConfig
 }
 
 type runtimeConfig struct {
 	wasiConfig WASIConfig
+	cache      CompilationCache
 }
 
 func (rc *runtimeConfig) WithWASI(wasi WASIConfig) RuntimeConfig {
 	rc.wasiConfig = wasi
+	return rc
+}
+
+func (rc *runtimeConfig) WithCompilationCache(cache CompilationCache) RuntimeConfig {
+	rc.cache = cache
 	return rc
 }
 
@@ -231,6 +243,24 @@ func (r *wasmRuntime) finalize() {
 type CompiledModule interface {
 	// Close releases the compiled module.
 	Close() error
+
+	// Name returns the module name encoded in the binary, or empty if not set.
+	Name() string
+
+	// ImportedFunctions returns all imported functions or nil if there are none.
+	ImportedFunctions() []api.FunctionDefinition
+
+	// ExportedFunctions returns all exported functions keyed by export name.
+	ExportedFunctions() map[string]api.FunctionDefinition
+
+	// ImportedMemories returns all imported memories or nil if there are none.
+	ImportedMemories() []api.MemoryDefinition
+
+	// ExportedMemories returns all exported memories keyed by export name.
+	ExportedMemories() map[string]api.MemoryDefinition
+
+	// CustomSections returns all custom sections keyed by section name.
+	CustomSections() []api.CustomSection
 }
 
 type compiledModule struct {
@@ -243,5 +273,35 @@ func (cm *compiledModule) Close() error {
 		wasmtime_module_delete(cm.ptr)
 		cm.ptr = 0
 	}
+	return nil
+}
+
+func (cm *compiledModule) Name() string {
+	// TODO: Implement via wasmtime_module_name if available
+	return ""
+}
+
+func (cm *compiledModule) ImportedFunctions() []api.FunctionDefinition {
+	// TODO: Implement via wasmtime module introspection API
+	return nil
+}
+
+func (cm *compiledModule) ExportedFunctions() map[string]api.FunctionDefinition {
+	// TODO: Implement via wasmtime module introspection API
+	return make(map[string]api.FunctionDefinition)
+}
+
+func (cm *compiledModule) ImportedMemories() []api.MemoryDefinition {
+	// TODO: Implement via wasmtime module introspection API
+	return nil
+}
+
+func (cm *compiledModule) ExportedMemories() map[string]api.MemoryDefinition {
+	// TODO: Implement via wasmtime module introspection API
+	return make(map[string]api.MemoryDefinition)
+}
+
+func (cm *compiledModule) CustomSections() []api.CustomSection {
+	// TODO: Implement via wasmtime module introspection API
 	return nil
 }

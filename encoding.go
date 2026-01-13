@@ -8,6 +8,7 @@ import (
 // All values are represented as uint64 in the API, matching wazero's design.
 
 // EncodeI32 encodes an int32 value as uint64.
+// This matches wazero's api.EncodeI32 function.
 func EncodeI32(v int32) uint64 {
 	return uint64(uint32(v))
 }
@@ -18,6 +19,7 @@ func DecodeI32(v uint64) int32 {
 }
 
 // EncodeU32 encodes a uint32 value as uint64.
+// This matches wazero's api.EncodeU32 function.
 func EncodeU32(v uint32) uint64 {
 	return uint64(v)
 }
@@ -28,6 +30,7 @@ func DecodeU32(v uint64) uint32 {
 }
 
 // EncodeI64 encodes an int64 value as uint64.
+// This matches wazero's api.EncodeI64 function.
 func EncodeI64(v int64) uint64 {
 	return uint64(v)
 }
@@ -38,6 +41,7 @@ func DecodeI64(v uint64) int64 {
 }
 
 // EncodeF32 encodes a float32 value as uint64.
+// This matches wazero's api.EncodeF32 function.
 func EncodeF32(v float32) uint64 {
 	return uint64(math.Float32bits(v))
 }
@@ -48,6 +52,7 @@ func DecodeF32(v uint64) float32 {
 }
 
 // EncodeF64 encodes a float64 value as uint64.
+// This matches wazero's api.EncodeF64 function.
 func EncodeF64(v float64) uint64 {
 	return math.Float64bits(v)
 }
@@ -55,4 +60,18 @@ func EncodeF64(v float64) uint64 {
 // DecodeF64 decodes a uint64 value to float64.
 func DecodeF64(v uint64) float64 {
 	return math.Float64frombits(v)
+}
+
+// EncodeExternref encodes a uintptr (pointer) value as an externref for passing to WebAssembly.
+// This matches wazero's api.EncodeExternref function.
+// Externrefs are opaque host references that can be passed between the host and WebAssembly.
+func EncodeExternref(v uintptr) uint64 {
+	return uint64(v)
+}
+
+// DecodeExternref decodes a uint64 value from WebAssembly to uintptr (externref).
+// This matches wazero's api.DecodeExternref function.
+// The returned value is an opaque host reference.
+func DecodeExternref(v uint64) uintptr {
+	return uintptr(v)
 }

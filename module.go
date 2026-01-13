@@ -111,6 +111,45 @@ func (m *module) ExportedMemory(name string) api.Memory {
 	}
 }
 
+func (m *module) ExportedGlobal(name string) api.Global {
+	ext, err := m.getExport(name)
+	if err != nil || ext == nil {
+		return nil
+	}
+
+	if ext.kind != WASMTIME_EXTERN_GLOBAL {
+		return nil
+	}
+
+	globalPtr := ext.AsGlobal()
+	return &global{
+		val:      *globalPtr,
+		store:    m.store,
+		storeCtx: wasmtime_store_context(m.store),
+		// TODO: Get actual type and mutability from wasmtime API
+		valType: api.ValueTypeI32, // Default, should be queried
+		mutable: true,             // Default, should be queried
+	}
+}
+
+func (m *module) ExportedTable(name string) api.Table {
+	ext, err := m.getExport(name)
+	if err != nil || ext == nil {
+		return nil
+	}
+
+	if ext.kind != WASMTIME_EXTERN_TABLE {
+		return nil
+	}
+
+	tablePtr := ext.AsTable()
+	return &table{
+		val:      *tablePtr,
+		store:    m.store,
+		storeCtx: wasmtime_store_context(m.store),
+	}
+}
+
 type memory struct {
 	val      wasmtime_memory_t
 	store    wasmtime_store_t

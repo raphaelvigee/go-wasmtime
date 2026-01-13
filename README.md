@@ -131,10 +131,37 @@ func main() {
 
 ### Value Encoding/Decoding
 
+All WebAssembly values are passed as `uint64` for simplicity and performance.
+
+**Integer types:**
 - `EncodeI32(v)` / `DecodeI32(v)` - int32 values
+- `EncodeU32(v)` / `DecodeU32(v)` - uint32 values  
 - `EncodeI64(v)` / `DecodeI64(v)` - int64 values
+
+**Floating-point types:**
 - `EncodeF32(v)` / `DecodeF32(v)` - float32 values
 - `EncodeF64(v)` / `DecodeF64(v)` - float64 values
+
+**Reference types:**
+- `EncodeExternref(v)` / `DecodeExternref(v)` - external references (pointers)
+
+### Module Features
+
+Access exported globals and tables:
+
+```go
+// Access global variables
+global := mod.ExportedGlobal("counter")
+value := global.Get(ctx)           // Read current value
+global.Set(ctx, EncodeI32(42))     // Write new value (if mutable)
+
+// Access tables
+table := mod.ExportedTable("tbl")
+size := table.Size(ctx)            // Get table size
+table.Grow(ctx, 5)                 // Grow table by 5 elements
+val := table.Get(ctx, 0)           // Get element at index
+table.Set(ctx, 0, val)             // Set element at index
+```
 
 ### WASI Configuration
 
@@ -150,6 +177,63 @@ func main() {
 
 - `NewRuntimeConfig()` - Create runtime configuration
 - `.WithWASI(wasiConfig)` - Add WASI support
+- `.WithCompilationCache(cache)` - Enable compilation caching for faster recompilation
+
+**Compilation Caching:**
+
+```go
+// In-memory cache
+cache := wasmtime.NewCompilationCache()
+defer cache.Close(ctx)
+
+// Persistent disk cache
+cache, err := wasmtime.NewCompilationCacheWithDir("~/.cache/wasm")
+defer cache.Close(ctx)
+
+// Use cache with runtime
+config := wasmtime.NewRuntimeConfig().WithCompilationCache(cache)
+r, _ := wasmtime.NewRuntimeWithConfig(ctx, config)
+```
+
+### Module Configuration
+
+Configure individual module instances with custom I/O, environment, and filesystem access:
+
+```go
+config := wasmtime.NewModuleConfig().
+	WithName("my-module").
+	WithArgs("program", "arg1", "arg2").
+	WithEnv("KEY", "value").
+	WithStdout(customWriter).
+	WithDirPreopen("/host/path", "/guest/path")
+
+// Note: Full integration with instantiation coming soon
+```
+
+### Host Functions
+
+Define Go functions that can be called from WebAssembly:
+
+```go
+// Create a host module
+hostModule := r.NewHostModuleBuilder("env")
+
+// Add a simple function
+hostModule.NewFunctionBuilder("add",
+	[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
+	[]api.ValueType{api.ValueTypeI32},
+).WithGoFunc(func(ctx context.Context, stack []uint64) {
+	a := wasmtime.DecodeI32(stack[0])
+	b := wasmtime.DecodeI32(stack[1])
+	stack[2] = wasmtime.EncodeI32(a + b)
+}).Export("add")
+
+// Instantiate the host module
+hostModule.Instantiate(ctx)
+defer hostModule.Close(ctx)
+
+// Note: Full C API integration pending
+```
 
 ## Environment Variables
 
