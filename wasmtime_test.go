@@ -164,8 +164,6 @@ func TestMultipleFunctionCalls(t *testing.T) {
 }
 
 func TestWASIHello(t *testing.T) {
-	t.Skip("WASI test requires import linking - bindings ready but not yet implemented")
-
 	engine, err := wasmtime.NewEngine()
 	require.NoError(t, err)
 	defer engine.Close()
@@ -183,14 +181,24 @@ func TestWASIHello(t *testing.T) {
 	err = wasiConfig.Apply(store)
 	require.NoError(t, err)
 
+	// Create a linker and define WASI
+	linker, err := wasmtime.NewLinker(engine)
+	require.NoError(t, err)
+	defer linker.Close()
+
+	err = linker.DefineWASI()
+	require.NoError(t, err)
+
 	module, err := wasmtime.NewModuleFromWATFile(engine, "testdata/hello_wasi.wat")
 	require.NoError(t, err)
 	defer module.Close()
 
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	// Use the linker to instantiate (it will provide WASI imports)
+	instance, err := linker.Instantiate(store, module)
 	require.NoError(t, err)
 
 	// Call the _start function
+	// No wrapper needed! instance.Call now automatically treats WASI exit(0) as success
 	_, err = instance.Call("_start")
 	require.NoError(t, err)
 

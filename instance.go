@@ -32,10 +32,10 @@ func NewInstance(store *Store, module *Module, imports []wasmtime_extern_t) (*In
 	runtime.KeepAlive(imports)
 
 	if err != 0 {
-		return nil, fmt.Errorf("failed to instantiate: %s", getErrorMessage(err, 0))
+		return nil, fmt.Errorf("failed to instantiate: %w", getErrorMessage(err, 0))
 	}
 	if trap != nil {
-		return nil, fmt.Errorf("failed to instantiate (trap): %s", getErrorMessage(0, *trap))
+		return nil, fmt.Errorf("failed to instantiate (trap): %w", getErrorMessage(0, *trap))
 	}
 
 	instance := &Instance{
@@ -121,10 +121,16 @@ func (i *Instance) Call(name string, args ...interface{}) ([]interface{}, error)
 	runtime.KeepAlive(results)
 
 	if callErr != 0 {
-		return nil, fmt.Errorf("call failed: %s", getErrorMessage(callErr, 0))
+		err := getErrorMessage(callErr, 0)
+		// Automatically ignore WASI exit code 0 for better UX
+		if exitErr, ok := err.(*WASIExitError); ok && exitErr.ExitCode == 0 {
+			// WASI exit(0) is success - return results normally
+		} else {
+			return nil, fmt.Errorf("call failed: %w", err)
+		}
 	}
 	if trap != nil {
-		return nil, fmt.Errorf("call failed (trap): %s", getErrorMessage(0, *trap))
+		return nil, fmt.Errorf("call failed (trap): %w", getErrorMessage(0, *trap))
 	}
 
 	// Convert results back to Go values

@@ -97,9 +97,18 @@ func (w *WASIConfig) WithInheritStdio() *WASIConfig {
 func (w *WASIConfig) Apply(store *Store) error {
 	err := wasmtime_context_set_wasi(store.Context(), w.ptr)
 	if err != 0 {
-		return fmt.Errorf("failed to set WASI: %s", getErrorMessage(err, 0))
+		return fmt.Errorf("failed to set WASI: %w", getErrorMessage(err, 0))
 	}
 	// Note: wasmtime takes ownership of the config, so we don't delete it
 	w.ptr = 0
 	return nil
+}
+
+// WASIExitError represents a WASI program exit
+type WASIExitError struct {
+	ExitCode int32
+}
+
+func (e *WASIExitError) Error() string {
+	return fmt.Sprintf("WASI program exited with status %d", e.ExitCode)
 }

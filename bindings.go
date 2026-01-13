@@ -36,10 +36,11 @@ var (
 	wasmtime_func_type func(wasmtime_context_t, *wasmtime_func_t) wasm_functype_t
 
 	// Function pointers - Error handling
-	wasmtime_error_message func(wasmtime_error_t, *wasm_byte_vec_t)
-	wasmtime_error_delete  func(wasmtime_error_t)
-	wasm_trap_message      func(wasm_trap_t, *wasm_byte_vec_t)
-	wasm_trap_delete       func(wasm_trap_t)
+	wasmtime_error_message     func(wasmtime_error_t, *wasm_byte_vec_t)
+	wasmtime_error_delete      func(wasmtime_error_t)
+	wasmtime_error_exit_status func(wasmtime_error_t, *int32) bool
+	wasm_trap_message          func(wasm_trap_t, *wasm_byte_vec_t)
+	wasm_trap_delete           func(wasm_trap_t)
 
 	// Function pointers - Byte vectors
 	wasm_byte_vec_new_uninitialized func(*wasm_byte_vec_t, uintptr)
@@ -114,6 +115,7 @@ func registerFunctions() error {
 	// Error handling
 	purego.RegisterLibFunc(&wasmtime_error_message, libHandle, "wasmtime_error_message")
 	purego.RegisterLibFunc(&wasmtime_error_delete, libHandle, "wasmtime_error_delete")
+	purego.RegisterLibFunc(&wasmtime_error_exit_status, libHandle, "wasmtime_error_exit_status")
 	purego.RegisterLibFunc(&wasm_trap_message, libHandle, "wasm_trap_message")
 	purego.RegisterLibFunc(&wasm_trap_delete, libHandle, "wasm_trap_delete")
 
@@ -126,11 +128,33 @@ func registerFunctions() error {
 		return err
 	}
 
+	// Register Linker functions
+	if err := registerLinkerFunctions(); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 // getErrorMessage extracts error message from wasmtime_error_t or wasm_trap_t
-func getErrorMessage(err wasmtime_error_t, trap wasm_trap_t) string {
+// Also detects WASI exits and returns WASIExitError for proper handling
+func getErrorMessage(err wasmtime_error_t, trap wasm_trap_t) error {
+	if err == 0 && trap == 0 {
+		return fmt.Errorf("unknown error")
+	}
+
+	// Check if this is a WASI exit before converting to string
+	if err != 0 {
+		var exitCode int32
+		if wasmtime_error_exit_status(err, &exitCode) {
+			// This is a WASI exit - return our typed error
+			wasmtimeErr := &WASIExitError{ExitCode: exitCode}
+			wasmtime_error_delete(err)
+			return wasmtimeErr
+		}
+	}
+
+	// Not a WASI exit, return regular error message
 	var msg wasm_byte_vec_t
 	if err != 0 {
 		wasmtime_error_message(err, &msg)
@@ -138,11 +162,9 @@ func getErrorMessage(err wasmtime_error_t, trap wasm_trap_t) string {
 	} else if trap != 0 {
 		wasm_trap_message(trap, &msg)
 		wasm_trap_delete(trap)
-	} else {
-		return "unknown error"
 	}
 
 	result := string(msg.toGoBytes())
 	wasm_byte_vec_delete(&msg)
-	return result
+	return fmt.Errorf("%s", result)
 }

@@ -58,14 +58,27 @@ func main() {
 	defer module.Close()
 	fmt.Println("✓ Compiled WASI module")
 
-	// Instantiate the module
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	// Create a linker and define WASI
+	linker, err := wasmtime.NewLinker(engine)
+	if err != nil {
+		log.Fatalf("Failed to create linker: %v", err)
+	}
+	defer linker.Close()
+
+	if err := linker.DefineWASI(); err != nil {
+		log.Fatalf("Failed to define WASI: %v", err)
+	}
+	fmt.Println("✓ Defined WASI in linker")
+
+	// Instantiate the module using the linker (it will provide WASI imports)
+	instance, err := linker.Instantiate(store, module)
 	if err != nil {
 		log.Fatalf("Failed to instantiate module: %v", err)
 	}
 	fmt.Println("✓ Instantiated module")
 
 	// Call the _start function
+	// No wrapper needed! instance.Call now automatically treats WASI exit(0) as success
 	fmt.Println("\nCalling _start function:")
 	_, err = instance.Call("_start")
 	if err != nil {

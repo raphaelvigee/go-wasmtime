@@ -20,7 +20,7 @@ func NewModuleFromWAT(engine *Engine, wat string) (*Module, error) {
 
 	err := wasmtime_wat2wasm(cString(wat), uintptr(len(watBytes)), &wasmVec)
 	if err != 0 {
-		return nil, fmt.Errorf("failed to parse WAT: %s", getErrorMessage(err, 0))
+		return nil, fmt.Errorf("failed to parse WAT: %w", getErrorMessage(err, 0))
 	}
 	defer wasm_byte_vec_delete(&wasmVec)
 
@@ -44,7 +44,7 @@ func NewModuleFromWASM(engine *Engine, wasm []byte) (*Module, error) {
 	wasmVec := newByteVec(wasm)
 	err := wasmtime_module_new(engine.ptr, wasmVec.data, wasmVec.size, &modulePtr)
 	if err != 0 {
-		return nil, fmt.Errorf("failed to compile module: %s", getErrorMessage(err, 0))
+		return nil, fmt.Errorf("failed to compile module: %w", getErrorMessage(err, 0))
 	}
 
 	module := &Module{ptr: modulePtr, engine: engine}

@@ -14,6 +14,7 @@ type (
 	wasm_trap_t        uintptr
 	wasm_functype_t    uintptr
 	wasi_config_t      uintptr
+	wasmtime_linker_t  uintptr
 )
 
 // wasmtime_func_t - From C header: struct with store_id and __private pointer
