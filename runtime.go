@@ -157,7 +157,10 @@ func (r *wasmRuntime) Instantiate(ctx context.Context, compiled CompiledModule) 
 	var trap *wasm_trap_t
 
 	storeCtx := wasmtime_store_context(r.store)
-	err := wasmtime_instance_new(storeCtx, cm.ptr, nil, 0, &inst, &trap)
+
+	// Use linker to instantiate - this allows host functions to be resolved
+	// This matches wazero's behavior where the runtime automatically links imports
+	err := wasmtime_linker_instantiate(r.linker, storeCtx, cm.ptr, &inst, &trap)
 
 	runtime.KeepAlive(r)
 	runtime.KeepAlive(cm)

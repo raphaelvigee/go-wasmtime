@@ -237,7 +237,6 @@ func TestHostModuleBuilderChaining(t *testing.T) {
 }
 
 func TestHostFunctionIntegration(t *testing.T) {
-	t.Skip("Skipping until C API integration is complete (wasmtime_linker_define_func)")
 
 	require.NoError(t, Initialize())
 
@@ -281,29 +280,19 @@ func TestHostFunctionIntegration(t *testing.T) {
 	defer hostModule.Close(t.Context())
 
 	// WASM module that imports and calls our host functions
-	wat := `
-	(module
-		;; Import host functions
+	wat := `(module
 		(import "env" "host_add" (func $host_add (param i32 i32) (result i32)))
 		(import "env" "host_log" (func $host_log (param i32)))
-		
-		;; Exported function that uses host functions
 		(func (export "test_host_functions") (result i32)
-			;; Call host_add(10, 20)
+			(local i32)
 			(i32.const 10)
 			(i32.const 20)
 			(call $host_add)
-			
-			;; Log the result
 			(local.set 0)
 			(local.get 0)
 			(call $host_log)
-			
-			;; Return the result
 			(local.get 0)
 		)
-		
-		(local i32)
 	)`
 
 	compiled, err := r.CompileModule(t.Context(), []byte(wat))
@@ -334,8 +323,6 @@ func TestHostFunctionIntegration(t *testing.T) {
 }
 
 func TestHostFunctionWithMemoryAccess(t *testing.T) {
-	t.Skip("Skipping until C API integration is complete")
-
 	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())

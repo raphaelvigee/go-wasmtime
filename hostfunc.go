@@ -2,6 +2,7 @@ package wasmtime
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/rvigee/purego-wasmtime/api"
 )
@@ -136,13 +137,60 @@ func (hmb *hostModuleBuilder) addFunction(fn *hostFunctionBuilder) {
 }
 
 func (hmb *hostModuleBuilder) Instantiate(ctx context.Context) error {
-	// Note: Actual implementation requires:
-	// 1. Creating wasmtime_func_t for each function
-	// 2. Defining functions in the linker using wasmtime_linker_define_func
-	// 3. Setting up callback trampolines
-	//
-	// This is complex and requires additional C API bindings.
-	// For now, we provide the structure but defer full implementation.
+	if hmb.runtime == nil {
+		return fmt.Errorf("host module builder has no associated runtime")
+	}
+
+	storeCtx := wasmtime_store_context(hmb.runtime.store)
+
+	// Register each function with the linker
+	for _, fn := range hmb.functions {
+		// Create function type
+		funcType, cleanup := createFuncType(fn.paramTypes, fn.resultTypes)
+		defer cleanup()
+
+		// Register function in global registry
+		funcID, callbackPtr := globalRegistry.register(fn, storeCtx, nil)
+
+		// Get callback pointer
+
+		// Create wasmtime function
+		var wasmFunc wasmtime_func_t
+		wasmtime_func_new(
+			storeCtx,
+			funcType,
+			callbackPtr,
+			funcID, // env pointer (our function ID)
+			0,      // finalizer
+			&wasmFunc,
+		)
+
+		// Create extern from function
+		var ext wasmtime_extern_t
+		ext.kind = WASMTIME_EXTERN_FUNC
+		funcPtr := ext.AsFunc()
+		*funcPtr = wasmFunc
+
+		// Define in linker
+		moduleBytes := []byte(hmb.moduleName + "\000")
+		nameBytes := []byte(fn.name + "\000")
+
+		err := wasmtime_linker_define(
+			hmb.linker,
+			storeCtx, // Add the missing store context
+			&moduleBytes[0],
+			uintptr(len(hmb.moduleName)),
+			&nameBytes[0],
+			uintptr(len(fn.name)),
+			&ext,
+		)
+
+		if err != 0 {
+			wasmtime_error_delete(err)
+			return fmt.Errorf("failed to define host function %s::%s", hmb.moduleName, fn.name)
+		}
+	}
+
 	return nil
 }
 

@@ -57,6 +57,8 @@ var (
 	wasmtime_linker_new         func(wasm_engine_t) wasmtime_linker_t
 	wasmtime_linker_delete      func(wasmtime_linker_t)
 	wasmtime_linker_define_wasi func(wasmtime_linker_t) wasmtime_error_t
+wasmtime_caller_export_get     func(uintptr, *byte, uintptr, *wasmtime_extern_t) bool
+
 	wasmtime_linker_instantiate func(wasmtime_linker_t, wasmtime_context_t, wasmtime_module_t, *wasmtime_instance_t, **wasm_trap_t) wasmtime_error_t
 
 	// Function pointers - Memory
@@ -74,6 +76,17 @@ var (
 	wasmtime_table_get  func(wasmtime_context_t, *wasmtime_table_t, uint32, *wasmtime_val_t) bool
 	wasmtime_table_set  func(wasmtime_context_t, *wasmtime_table_t, uint32, *wasmtime_val_t) bool
 	wasmtime_table_grow func(wasmtime_context_t, *wasmtime_table_t, uint32, *wasmtime_val_t, *uint32) wasmtime_error_t
+
+	// Function pointers - Host Functions
+	wasmtime_func_new                  func(wasmtime_context_t, wasm_functype_t, uintptr, uintptr, uintptr, *wasmtime_func_t)
+	wasmtime_linker_define             func(wasmtime_linker_t, wasmtime_context_t, *byte, uintptr, *byte, uintptr, *wasmtime_extern_t) wasmtime_error_t
+
+	wasm_functype_new                  func(*wasm_valtype_vec_t, *wasm_valtype_vec_t) wasm_functype_t
+	wasm_valtype_new                   func(uint8) wasm_valtype_t
+	wasm_valtype_delete                func(wasm_valtype_t)
+	wasm_valtype_vec_new_empty         func(*wasm_valtype_vec_t)
+	wasm_valtype_vec_new_uninitialized func(*wasm_valtype_vec_t, uintptr)
+	wasm_valtype_vec_delete            func(*wasm_valtype_vec_t)
 
 	initOnce sync.Once
 	initErr  error
@@ -176,6 +189,18 @@ func registerFunctions() error {
 	purego.RegisterLibFunc(&wasmtime_table_get, libHandle, "wasmtime_table_get")
 	purego.RegisterLibFunc(&wasmtime_table_set, libHandle, "wasmtime_table_set")
 	purego.RegisterLibFunc(&wasmtime_table_grow, libHandle, "wasmtime_table_grow")
+
+	// Host function support
+	purego.RegisterLibFunc(&wasmtime_func_new, libHandle, "wasmtime_func_new")
+	purego.RegisterLibFunc(&wasmtime_linker_define, libHandle, "wasmtime_linker_define")
+	purego.RegisterLibFunc(&wasmtime_caller_export_get, libHandle, "wasmtime_caller_export_get")
+	purego.RegisterLibFunc(&wasm_functype_new, libHandle, "wasm_functype_new")
+	purego.RegisterLibFunc(&wasm_functype_delete, libHandle, "wasm_functype_delete")
+	purego.RegisterLibFunc(&wasm_valtype_new, libHandle, "wasm_valtype_new")
+	purego.RegisterLibFunc(&wasm_valtype_delete, libHandle, "wasm_valtype_delete")
+	purego.RegisterLibFunc(&wasm_valtype_vec_new_empty, libHandle, "wasm_valtype_vec_new_empty")
+	purego.RegisterLibFunc(&wasm_valtype_vec_new_uninitialized, libHandle, "wasm_valtype_vec_new_uninitialized")
+	purego.RegisterLibFunc(&wasm_valtype_vec_delete, libHandle, "wasm_valtype_vec_delete")
 
 	return nil
 }
