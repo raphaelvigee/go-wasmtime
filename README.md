@@ -10,6 +10,7 @@ A Go library for executing WebAssembly using [wasmtime](https://github.com/bytec
 - 🎯 **Simple API** - Clean, idiomatic Go interface
 - 🔒 **Type Safe** - Strong typing with Go's type system
 - 🏗️ **Multi-Platform** - Supports macOS (aarch64/x86_64) and Linux (aarch64/x86_64)
+- 🔌 **Host Functions** - Call Go functions from WebAssembly
 
 ## Installation
 
@@ -70,6 +71,41 @@ func main() {
 }
 ```
 
+## API Overview
+
+### Runtime
+
+- `NewRuntime(ctx)` - Create a WebAssembly runtime
+- `NewRuntimeWithConfig(ctx, config)` - Create runtime with configuration
+- `runtime.CompileModule(ctx, binary)` - Compile WAT or WASM
+- `runtime.Instantiate(ctx, compiled)` - Instantiate without WASI
+- `runtime.InstantiateWithWASI(ctx, compiled)` - Instantiate with WASI
+- `runtime.Close(ctx)` - Close and cleanup
+
+### Module & Functions
+
+- `module.ExportedFunction(name)` - Get an exported function
+- `function.Call(ctx, params...)` - Call function with encoded parameters
+- `module.Close(ctx)` - Close module
+
+### Value Encoding/Decoding
+
+All WebAssembly values are passed as `uint64` for simplicity and performance.
+
+**Integer types:**
+- `EncodeI32(v)` / `DecodeI32(v)` - int32 values
+- `EncodeU32(v)` / `DecodeU32(v)` - uint32 values  
+- `EncodeI64(v)` / `DecodeI64(v)` - int64 values
+
+**Floating-point types:**
+- `EncodeF32(v)` / `DecodeF32(v)` - float32 values
+- `EncodeF64(v)` / `DecodeF64(v)` - float64 values
+
+**Reference types:**
+- `EncodeExternref(v)` / `DecodeExternref(v)` - external references (pointers)
+
+## WASI Support
+
 ### WASI Example
 
 ```go
@@ -112,40 +148,19 @@ func main() {
 }
 ```
 
-## API Overview
+### WASI Configuration
 
-### Runtime
+- `NewWASIConfig()` - Create WASI configuration
+- `.WithArgs(args...)` - Set command-line arguments (variadic)
+- `.WithEnv(key, value)` - Set single environment variable
+- `.WithEnvs(map[string]string)` - Set multiple environment variables
+- `.WithPreopenDir(host, guest)` - Grant directory access
+- `.WithInheritStdio()` - Inherit stdin/stdout/stderr
+- `.WithInheritArgs()` / `.WithInheritEnv()` - Inherit from host
 
-- `NewRuntime(ctx)` - Create a WebAssembly runtime
-- `NewRuntimeWithConfig(ctx, config)` - Create runtime with configuration
-- `runtime.CompileModule(ctx, binary)` - Compile WAT or WASM
-- `runtime.Instantiate(ctx, compiled)` - Instantiate without WASI
-- `runtime.InstantiateWithWASI(ctx, compiled)` - Instantiate with WASI
-- `runtime.Close(ctx)` - Close and cleanup
+## Advanced Features
 
-### Module & Functions
-
-- `module.ExportedFunction(name)` - Get an exported function
-- `function.Call(ctx, params...)` - Call function with encoded parameters
-- `module.Close(ctx)` - Close module
-
-### Value Encoding/Decoding
-
-All WebAssembly values are passed as `uint64` for simplicity and performance.
-
-**Integer types:**
-- `EncodeI32(v)` / `DecodeI32(v)` - int32 values
-- `EncodeU32(v)` / `DecodeU32(v)` - uint32 values  
-- `EncodeI64(v)` / `DecodeI64(v)` - int64 values
-
-**Floating-point types:**
-- `EncodeF32(v)` / `DecodeF32(v)` - float32 values
-- `EncodeF64(v)` / `DecodeF64(v)` - float64 values
-
-**Reference types:**
-- `EncodeExternref(v)` / `DecodeExternref(v)` - external references (pointers)
-
-### Module Features
+### Global Variables
 
 Access exported globals and tables:
 
@@ -163,25 +178,67 @@ val := table.Get(ctx, 0)           // Get element at index
 table.Set(ctx, 0, val)             // Set element at index
 ```
 
-### WASI Configuration
+### Memory Access
 
-- `NewWASIConfig()` - Create WASI configuration
-- `.WithArgs(args...)` - Set command-line arguments (variadic)
-- `.WithEnv(key, value)` - Set single environment variable
-- `.WithEnvs(map[string]string)` - Set multiple environment variables
-- `.WithPreopenDir(host, guest)` - Grant directory access
-- `.WithInheritStdio()` - Inherit stdin/stdout/stderr
-- `.WithInheritArgs()` / `.WithInheritEnv()` - Inherit from host
+Access WebAssembly module memory:
 
-### Runtime Configuration
+```go
+mem := mod.ExportedMemory("memory")
+if mem != nil {
+    data := mem.Data(ctx)          // Get pointer to memory
+    size := mem.DataSize(ctx)      // Get memory size in bytes
+    pages := mem.Size(ctx)         // Get memory size in pages
+    mem.Grow(ctx, 2)               // Grow memory by 2 pages
+}
+```
 
-- `NewRuntimeConfig()` - Create runtime configuration
-- `.WithWASI(wasiConfig)` - Add WASI support
-- `.WithCompilationCache(cache)` - Enable compilation caching for faster recompilation
-- `.WithLibraryPath(path)` - Use custom wasmtime library path (disables auto-download)
-- `.WithAutoDownload(version)` - Enable auto-download with specific version (empty string = default v40.0.0)
+### Host Functions
 
-**Compilation Caching:**
+Define Go functions that can be called from WebAssembly:
+
+```go
+// Create a host module
+hostModule := r.NewHostModuleBuilder("env")
+
+// Add a simple function with GoFunc
+hostModule.NewFunctionBuilder("add",
+    []api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
+    []api.ValueType{api.ValueTypeI32},
+).WithGoFunc(func(ctx context.Context, stack []uint64) {
+    a := wasmtime.DecodeI32(stack[0])
+    b := wasmtime.DecodeI32(stack[1])
+    stack[2] = wasmtime.EncodeI32(a + b)
+}).Export("add")
+
+// Add a function that accesses module memory with GoModuleFunc
+hostModule.NewFunctionBuilder("read_memory",
+    []api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
+    []api.ValueType{api.ValueTypeI32},
+).WithGoModuleFunc(func(ctx context.Context, mod api.Module, stack []uint64) {
+    ptr := wasmtime.DecodeI32(stack[0])
+    length := wasmtime.DecodeI32(stack[1])
+    
+    // Access the calling module's memory
+    mem := mod.ExportedMemory("memory")
+    data := mem.Data(ctx)
+    
+    // Read from memory
+    bytes := (*[1 << 30]byte)(data)[ptr : ptr+length]
+    // ... process bytes ...
+    
+    stack[2] = wasmtime.EncodeI32(length)
+}).Export("read_memory")
+
+// Instantiate the host module
+hostModule.Instantiate(ctx)
+defer hostModule.Close(ctx)
+
+// Now WASM modules can import these functions from "env" module
+```
+
+### Compilation Caching
+
+Cache compiled modules for faster startup:
 
 ```go
 // In-memory cache
@@ -203,41 +260,16 @@ Configure individual module instances with custom I/O, environment, and filesyst
 
 ```go
 config := wasmtime.NewModuleConfig().
-	WithName("my-module").
-	WithArgs("program", "arg1", "arg2").
-	WithEnv("KEY", "value").
-	WithStdout(customWriter).
-	WithDirPreopen("/host/path", "/guest/path")
+    WithName("my-module").
+    WithArgs("program", "arg1", "arg2").
+    WithEnv("KEY", "value").
+    WithStdout(customWriter).
+    WithDirPreopen("/host/path", "/guest/path")
 
 // Note: Full integration with instantiation coming soon
 ```
 
-### Host Functions
-
-Define Go functions that can be called from WebAssembly:
-
-```go
-// Create a host module
-hostModule := r.NewHostModuleBuilder("env")
-
-// Add a simple function
-hostModule.NewFunctionBuilder("add",
-	[]api.ValueType{api.ValueTypeI32, api.ValueTypeI32},
-	[]api.ValueType{api.ValueTypeI32},
-).WithGoFunc(func(ctx context.Context, stack []uint64) {
-	a := wasmtime.DecodeI32(stack[0])
-	b := wasmtime.DecodeI32(stack[1])
-	stack[2] = wasmtime.EncodeI32(a + b)
-}).Export("add")
-
-// Instantiate the host module
-hostModule.Instantiate(ctx)
-defer hostModule.Close(ctx)
-
-// Note: Full C API integration pending
-```
-
-## Advanced Configuration
+## Runtime Configuration
 
 ### Custom Library Path
 
@@ -280,6 +312,14 @@ if customPath := os.Getenv("WASMTIME_LIB_PATH"); customPath != "" {
 r, err := wasmtime.NewRuntimeWithConfig(ctx, config)
 ```
 
+### Runtime Configuration Options
+
+- `NewRuntimeConfig()` - Create runtime configuration
+- `.WithWASI(wasiConfig)` - Add WASI support
+- `.WithCompilationCache(cache)` - Enable compilation caching for faster recompilation
+- `.WithLibraryPath(path)` - Use custom wasmtime library path (disables auto-download)
+- `.WithAutoDownload(version)` - Enable auto-download with specific version (empty string = default v40.0.0)
+
 ## Platform Support
 
 | Platform | Architecture | Status |
@@ -300,8 +340,9 @@ r, err := wasmtime.NewRuntimeWithConfig(ctx, config)
 ## Examples
 
 See the `examples/` directory for complete programs:
-- `simple.go` - Basic module compilation and instantiation
-- `wasi_hello.go` - WASI program with environment and stdio
+- `simple/` - Basic module compilation and instantiation
+- `wasi/` - WASI program with environment and stdio
+- `features/` - Advanced features (globals, tables, encoding)
 
 ## Testing
 

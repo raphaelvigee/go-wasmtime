@@ -68,8 +68,8 @@ func (rc *runtimeConfig) WithAutoDownload(version string) RuntimeConfig {
 // NewRuntimeConfig creates a new runtime configuration.
 func NewRuntimeConfig() RuntimeConfig {
 	return &runtimeConfig{
-		autoDownload: true,      // Default to auto-download
-		version:      "v40.0.0", // Default version
+		autoDownload: true,            // Default to auto-download
+		version:      wasmtimeVersion, // Default version
 	}
 }
 
