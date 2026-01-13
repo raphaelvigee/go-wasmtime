@@ -109,36 +109,11 @@ func (i *Instance) Call(name string, args ...interface{}) ([]interface{}, error)
 
 	funcPtr := ext.AsFunc()
 
-	// Debug: Inspect raw bytes at funcPtr location
-	fmt.Printf("DEBUG: ext pointer: %p\n", ext)
-	fmt.Printf("DEBUG: funcPtr pointer: %p\n", funcPtr)
-	extRaw := (*[32]byte)(unsafe.Pointer(ext))
-	fmt.Printf("DEBUG: ext raw bytes: % x\n", extRaw[:])
-	funcRaw := (*[16]byte)(unsafe.Pointer(funcPtr))
-	fmt.Printf("DEBUG: funcPtr raw bytes: % x\n", funcRaw[:])
-
-	// Debug: check what we're about to call
-	fmt.Printf("DEBUG: Calling function with:\n")
-	fmt.Printf("  Context: %#v\n", i.store.Context())
-	fmt.Printf("  FuncPtr: %#v\n", funcPtr)
-	fmt.Printf("  FuncPtr.store_id: %d\n", funcPtr.store_id)
-	fmt.Printf("  FuncPtr.__private: %#v\n", funcPtr.__private)
-	fmt.Printf("  Args: %d\n", len(wasmArgs))
-
-	// Debug: check arguments being passed
-	if len(wasmArgs) > 0 {
-		fmt.Printf("DEBUG: Passing %d arguments:\n", len(wasmArgs))
-		for i, arg := range wasmArgs {
-			argBytes := (*[24]byte)(unsafe.Pointer(&arg))
-			fmt.Printf("  Arg %d: kind=%d, bytes=% x\n", i, arg.kind, argBytes[:])
-		}
-	}
-
-	// Prepare result buffer
+	// Prepare result buffer - support up to 1 result for now
 	var results [1]wasmtime_val_t
 	numResults := uintptr(1)
 
-	// Call the function WITH results
+	// Call the function
 	callErr := wasmtime_func_call(i.store.Context(), funcPtr, argsPtr, uintptr(len(wasmArgs)), &results[0], numResults, &trap)
 
 	// Keep objects alive during C call
