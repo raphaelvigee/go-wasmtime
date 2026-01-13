@@ -87,19 +87,6 @@ func (i *Instance) Call(name string, args ...interface{}) ([]interface{}, error)
 		wasmArgs = append(wasmArgs, val)
 	}
 
-	// Prepare result buffer - for now support up to 1 result
-	// TODO: Fix result handling - there's a crash when requesting results
-	// For now, call without results and return empty array
-	/*
-		var results [1]wasmtime_val_t
-		var resultsPtr *wasmtime_val_t
-		numResults := uintptr(1) // Most functions return 0 or 1 value
-
-		if numResults > 0 {
-			resultsPtr = &results[0]
-		}
-	*/
-
 	// Call the function
 	var trap *wasm_trap_t
 	var argsPtr *wasmtime_val_t
@@ -109,12 +96,23 @@ func (i *Instance) Call(name string, args ...interface{}) ([]interface{}, error)
 
 	funcPtr := ext.AsFunc()
 
-	// Prepare result buffer - support up to 1 result for now
-	var results [1]wasmtime_val_t
-	numResults := uintptr(1)
+	// Query function type to get expected result count
+	funcType := wasmtime_func_type(i.store.Context(), funcPtr)
+	defer wasm_functype_delete(funcType) // Clean up the functype
+
+	resultsVec := wasm_functype_results(funcType)
+	numResults := resultsVec.size
+
+	// Allocate result buffer dynamically based on expected results
+	var resultsPtr *wasmtime_val_t
+	var results []wasmtime_val_t
+	if numResults > 0 {
+		results = make([]wasmtime_val_t, numResults)
+		resultsPtr = &results[0]
+	}
 
 	// Call the function
-	callErr := wasmtime_func_call(i.store.Context(), funcPtr, argsPtr, uintptr(len(wasmArgs)), &results[0], numResults, &trap)
+	callErr := wasmtime_func_call(i.store.Context(), funcPtr, argsPtr, uintptr(len(wasmArgs)), resultsPtr, numResults, &trap)
 
 	// Keep objects alive during C call
 	runtime.KeepAlive(i.store)

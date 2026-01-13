@@ -61,6 +61,12 @@ type wasm_byte_vec_t struct {
 	data *byte
 }
 
+// wasm_valtype_vec_t represents a vector of value types in C
+type wasm_valtype_vec_t struct {
+	size uintptr
+	data uintptr // Pointer to array of wasm_valtype_t*
+}
+
 // wasmtime_val_raw represents a raw WebAssembly value
 // This is a union in C. The largest member is wasmtime_anyref_t (24 bytes),
 // NOT v128 (16 bytes) as I initially thought!
