@@ -207,6 +207,7 @@ func (r *wasmRuntime) InstantiateWithWASI(ctx context.Context, compiled Compiled
 }
 
 func (r *wasmRuntime) Close(ctx context.Context) error {
+	runtime.SetFinalizer(r, nil) // Prevent finalizer from running since we are closing explicitly
 	r.finalize()
 	return nil
 }
