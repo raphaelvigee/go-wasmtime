@@ -4,10 +4,27 @@ import (
 	"context"
 	"fmt"
 	"runtime"
+	"sync"
 	"unsafe"
 
 	"github.com/rvigee/purego-wasmtime/api"
 )
+
+type callBuffer struct {
+	Params       []wasmtime_val_t
+	Results      []wasmtime_val_t
+	ResultValues []uint64
+}
+
+var bufferPool = sync.Pool{
+	New: func() interface{} {
+		return &callBuffer{
+			Params:       make([]wasmtime_val_t, 0, 8),
+			Results:      make([]wasmtime_val_t, 0, 1),
+			ResultValues: make([]uint64, 0, 1),
+		}
+	},
+}
 
 // module implements api.Module for an instantiated WebAssembly module.
 type module struct {
@@ -31,12 +48,19 @@ func (m *module) ExportedFunction(name string) api.Function {
 	}
 
 	funcPtr := ext.AsFunc()
-	return &function{
+	f := &function{
 		name:    name,
 		ptr:     funcPtr,
 		store:   m.store,
-		fnCache: nil, // Will be populated on first Definition() call
+		fnCache: nil,
 	}
+
+	// Pre-populate definition to cache types
+	def := f.Definition()
+	f.paramTypes = def.ParamTypes()
+	f.resultTypes = def.ResultTypes()
+
+	return f
 }
 
 func (m *module) ExportedFunctionDefinitions() map[string]api.FunctionDefinition {
@@ -70,10 +94,12 @@ func (m *module) getExport(name string) (*wasmtime_extern_t, error) {
 
 // function implements api.Function.
 type function struct {
-	name    string
-	ptr     *wasmtime_func_t
-	store   wasmtime_store_t
-	fnCache api.FunctionDefinition
+	name        string
+	ptr         *wasmtime_func_t
+	store       wasmtime_store_t
+	fnCache     api.FunctionDefinition
+	paramTypes  []api.ValueType
+	resultTypes []api.ValueType
 }
 
 func (f *function) Definition() api.FunctionDefinition {
@@ -117,42 +143,48 @@ func (f *function) Definition() api.FunctionDefinition {
 }
 
 func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error) {
-	def := f.Definition()
-	paramTypes := def.ParamTypes()
-	resultTypes := def.ResultTypes()
-
-	if len(params) != len(paramTypes) {
-		return nil, fmt.Errorf("expected %d parameters, got %d", len(paramTypes), len(params))
+	if len(params) != len(f.paramTypes) {
+		return nil, fmt.Errorf("expected %d parameters, got %d", len(f.paramTypes), len(params))
 	}
 
-	// Convert uint64 params to wasmtime_val_t
-	wasmParams := make([]wasmtime_val_t, len(params))
+	// Get buffer from pool
+	buf := bufferPool.Get().(*callBuffer)
+	defer bufferPool.Put(buf)
+
+	// Prepare params
+	buf.Params = buf.Params[:0]
+	if cap(buf.Params) < len(params) {
+		buf.Params = make([]wasmtime_val_t, 0, len(params))
+	}
 	for i, param := range params {
-		wasmParams[i] = encodeToWasmValue(param, paramTypes[i])
+		buf.Params = append(buf.Params, encodeToWasmValue(param, f.paramTypes[i]))
 	}
 
-	// Prepare result buffer
+	// Prepare results
+	numResults := len(f.resultTypes)
+	buf.Results = buf.Results[:0]
+	if cap(buf.Results) < numResults {
+		buf.Results = make([]wasmtime_val_t, 0, numResults)
+	}
+	// We need the slice length to be numResults for the C API to write into
+	buf.Results = buf.Results[:numResults]
+
 	var resultsPtr *wasmtime_val_t
-	var results []wasmtime_val_t
-	numResults := uintptr(len(resultTypes))
 	if numResults > 0 {
-		results = make([]wasmtime_val_t, numResults)
-		resultsPtr = &results[0]
+		resultsPtr = &buf.Results[0]
 	}
 
-	// Call the function
 	var paramsPtr *wasmtime_val_t
-	if len(wasmParams) > 0 {
-		paramsPtr = &wasmParams[0]
+	if len(buf.Params) > 0 {
+		paramsPtr = &buf.Params[0]
 	}
 
 	var trap *wasm_trap_t
 	storeCtx := wasmtime_store_context(f.store)
-	callErr := wasmtime_func_call(storeCtx, f.ptr, paramsPtr, uintptr(len(wasmParams)), resultsPtr, numResults, &trap)
+	callErr := wasmtime_func_call(storeCtx, f.ptr, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &trap)
 
 	runtime.KeepAlive(f)
-	runtime.KeepAlive(wasmParams)
-	runtime.KeepAlive(results)
+	// buf is kept alive by the function scope reference
 
 	if callErr != 0 {
 		err := getErrorMessage(callErr, 0)
@@ -168,9 +200,12 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 	}
 
 	// Convert results back to uint64
+	// We return a new slice because the caller owns the result
+	// Assuming the caller wants []uint64 and not a reused buffer
+	// Optimizing this further would require changing the API to accept a result buffer
 	resultValues := make([]uint64, numResults)
-	for i := uintptr(0); i < numResults; i++ {
-		resultValues[i] = decodeFromWasmValue(&results[i])
+	for i := 0; i < numResults; i++ {
+		resultValues[i] = decodeFromWasmValue(&buf.Results[i])
 	}
 
 	return resultValues, nil
@@ -230,8 +265,8 @@ func wasmValueTypeToAPI(kind wasm_valkind_t) api.ValueType {
 
 func encodeToWasmValue(v uint64, vt api.ValueType) wasmtime_val_t {
 	var result wasmtime_val_t
-	// Zero-init padding
-	*(*[24]byte)(unsafe.Pointer(&result)) = [24]byte{}
+	// Optimization: Skip zero-init of padding since we override the value anyway
+	// and C API ignores padding.
 
 	switch vt {
 	case api.ValueTypeI32:
