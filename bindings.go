@@ -47,8 +47,16 @@ var (
 	wasm_byte_vec_delete            func(*wasm_byte_vec_t)
 
 	// Function pointers - Function type introspection
+	wasm_functype_params  func(wasm_functype_t) *wasm_valtype_vec_t
 	wasm_functype_results func(wasm_functype_t) *wasm_valtype_vec_t
 	wasm_functype_delete  func(wasm_functype_t)
+	wasm_valtype_kind     func(wasm_valtype_t) wasm_valkind_t
+
+	// Function pointers - Linker
+	wasmtime_linker_new         func(wasm_engine_t) wasmtime_linker_t
+	wasmtime_linker_delete      func(wasmtime_linker_t)
+	wasmtime_linker_define_wasi func(wasmtime_linker_t) wasmtime_error_t
+	wasmtime_linker_instantiate func(wasmtime_linker_t, wasmtime_context_t, wasmtime_module_t, *wasmtime_instance_t, **wasm_trap_t) wasmtime_error_t
 
 	initOnce sync.Once
 	initErr  error
@@ -109,8 +117,10 @@ func registerFunctions() error {
 	purego.RegisterLibFunc(&wasmtime_func_type, libHandle, "wasmtime_func_type")
 
 	// Function type introspection
+	purego.RegisterLibFunc(&wasm_functype_params, libHandle, "wasm_functype_params")
 	purego.RegisterLibFunc(&wasm_functype_results, libHandle, "wasm_functype_results")
 	purego.RegisterLibFunc(&wasm_functype_delete, libHandle, "wasm_functype_delete")
+	purego.RegisterLibFunc(&wasm_valtype_kind, libHandle, "wasm_valtype_kind")
 
 	// Error handling
 	purego.RegisterLibFunc(&wasmtime_error_message, libHandle, "wasmtime_error_message")
@@ -128,10 +138,11 @@ func registerFunctions() error {
 		return err
 	}
 
-	// Register Linker functions
-	if err := registerLinkerFunctions(); err != nil {
-		return err
-	}
+	// Register Linker functions (integrated here since linker.go was deleted)
+	purego.RegisterLibFunc(&wasmtime_linker_new, libHandle, "wasmtime_linker_new")
+	purego.RegisterLibFunc(&wasmtime_linker_delete, libHandle, "wasmtime_linker_delete")
+	purego.RegisterLibFunc(&wasmtime_linker_define_wasi, libHandle, "wasmtime_linker_define_wasi")
+	purego.RegisterLibFunc(&wasmtime_linker_instantiate, libHandle, "wasmtime_linker_instantiate")
 
 	return nil
 }

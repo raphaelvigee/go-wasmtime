@@ -1,6 +1,7 @@
 package wasmtime_test
 
 import (
+	"context"
 	"testing"
 
 	wasmtime "github.com/rvigee/purego-wasmtime"
@@ -9,13 +10,10 @@ import (
 
 // TestMultiValueReturns tests functions returning 0, 1, and 2+ values
 func TestMultiValueReturns(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+	r, err := wasmtime.NewRuntime(ctx)
 	require.NoError(t, err)
-	defer engine.Close()
-
-	store, err := wasmtime.NewStore(engine)
-	require.NoError(t, err)
-	defer store.Close()
+	defer r.Close(ctx)
 
 	// WAT with various return counts
 	wat := `
@@ -49,55 +47,49 @@ func TestMultiValueReturns(t *testing.T) {
 		)
 	`
 
-	module, err := wasmtime.NewModuleFromWAT(engine, wat)
+	// Compile inline WAT
+	compiled, err := r.CompileModule(ctx, []byte(wat))
 	require.NoError(t, err)
-	defer module.Close()
+	defer compiled.Close()
 
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	mod, err := r.Instantiate(ctx, compiled)
 	require.NoError(t, err)
+	defer mod.Close(ctx)
 
 	t.Run("zero results", func(t *testing.T) {
-		results, err := instance.Call("no_return", int32(5))
-		if err != nil {
-			t.Fatalf("Call failed: %v", err)
-		}
-		if len(results) != 0 {
-			t.Errorf("Expected 0 results, got %d: %v", len(results), results)
-		}
+		fn := mod.ExportedFunction("no_return")
+		require.NotNil(t, fn)
+
+		results, err := fn.Call(ctx, wasmtime.EncodeI32(5))
+		require.NoError(t, err)
+		require.Len(t, results, 0, "Expected 0 results")
 		t.Logf("✓ Void function returned %d results", len(results))
 	})
 
 	t.Run("one result", func(t *testing.T) {
-		results, err := instance.Call("one_return", int32(5))
-		if err != nil {
-			t.Fatalf("Call failed: %v", err)
-		}
-		if len(results) != 1 {
-			t.Fatalf("Expected 1 result, got %d", len(results))
-		}
-		if results[0].(int32) != 15 {
-			t.Errorf("Expected 15, got %v", results[0])
-		}
-		t.Logf("✓ Single-value function returned %d results: %v", len(results), results)
+		fn := mod.ExportedFunction("one_return")
+		require.NotNil(t, fn)
+
+		results, err := fn.Call(ctx, wasmtime.EncodeI32(5))
+		require.NoError(t, err)
+		require.Len(t, results, 1, "Expected 1 result")
+		require.Equal(t, int32(15), wasmtime.DecodeI32(results[0]))
+		t.Logf("✓ Single-value function returned %d results: %v", len(results), wasmtime.DecodeI32(results[0]))
 	})
 
 	t.Run("two results", func(t *testing.T) {
-		results, err := instance.Call("two_returns", int32(3), int32(4))
-		if err != nil {
-			t.Fatalf("Call failed: %v", err)
-		}
-		if len(results) != 2 {
-			t.Fatalf("Expected 2 results, got %d", len(results))
-		}
-		sum := results[0].(int32)
-		product := results[1].(int32)
+		fn := mod.ExportedFunction("two_returns")
+		require.NotNil(t, fn)
 
-		if sum != 7 {
-			t.Errorf("Expected sum=7, got %d", sum)
-		}
-		if product != 12 {
-			t.Errorf("Expected product=12, got %d", product)
-		}
+		results, err := fn.Call(ctx, wasmtime.EncodeI32(3), wasmtime.EncodeI32(4))
+		require.NoError(t, err)
+		require.Len(t, results, 2, "Expected 2 results")
+
+		sum := wasmtime.DecodeI32(results[0])
+		product := wasmtime.DecodeI32(results[1])
+
+		require.Equal(t, int32(7), sum, "Expected sum=7")
+		require.Equal(t, int32(12), product, "Expected product=12")
 		t.Logf("✓ Multi-value function returned %d results: sum=%d, product=%d", len(results), sum, product)
 	})
 }

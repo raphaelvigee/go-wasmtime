@@ -1,8 +1,10 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
+	"os"
 
 	wasmtime "github.com/rvigee/purego-wasmtime"
 )
@@ -10,77 +12,54 @@ import (
 func main() {
 	fmt.Println("=== WASI Example ===")
 
-	// Create an engine
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+
+	// Create runtime with WASI configuration
+	config := wasmtime.NewRuntimeConfig().
+		WithWASI(
+			wasmtime.NewWASIConfig().
+				WithInheritStdio().
+				WithEnv("GREETING", "Hello from WASI!").
+				WithEnv("USER", "wasmtime-go").
+				WithArgs("wasi-program", "--hello"),
+		)
+
+	r, err := wasmtime.NewRuntimeWithConfig(ctx, config)
 	if err != nil {
-		log.Fatalf("Failed to create engine: %v", err)
+		log.Fatalf("Failed to create runtime: %v", err)
 	}
-	defer engine.Close()
-	fmt.Println("✓ Created engine")
-
-	// Create a store
-	store, err := wasmtime.NewStore(engine)
-	if err != nil {
-		log.Fatalf("Failed to create store: %v", err)
-	}
-	defer store.Close()
-	fmt.Println("✓ Created store")
-
-	// Configure WASI
-	wasiConfig, err := wasmtime.NewWASIConfig()
-	if err != nil {
-		log.Fatalf("Failed to create WASI config: %v", err)
-	}
-
-	// Inherit stdio from host
-	wasiConfig.WithInheritStdio()
-
-	// Set environment variables
-	wasiConfig.WithEnv(map[string]string{
-		"GREETING": "Hello from WASI!",
-		"USER":     "wasmtime-go",
-	})
-
-	// Set command-line arguments
-	wasiConfig.WithArgs([]string{"wasi-program", "--hello"})
-
-	// Apply WASI configuration to store
-	if err := wasiConfig.Apply(store); err != nil {
-		log.Fatalf("Failed to apply WASI config: %v", err)
-	}
-	fmt.Println("✓ Configured WASI with stdio, env, and args")
+	defer r.Close(ctx)
+	fmt.Println("✓ Created runtime with WASI config")
 
 	// Load and compile the WASI module
-	module, err := wasmtime.NewModuleFromWATFile(engine, "../testdata/hello_wasi.wat")
+	wat, err := os.ReadFile("../testdata/hello_wasi.wat")
 	if err != nil {
-		log.Fatalf("Failed to load module: %v", err)
+		log.Fatalf("Failed to read WAT file: %v", err)
 	}
-	defer module.Close()
+
+	compiled, err := r.CompileModule(ctx, wat)
+	if err != nil {
+		log.Fatalf("Failed to compile module: %v", err)
+	}
+	defer compiled.Close()
 	fmt.Println("✓ Compiled WASI module")
 
-	// Create a linker and define WASI
-	linker, err := wasmtime.NewLinker(engine)
-	if err != nil {
-		log.Fatalf("Failed to create linker: %v", err)
-	}
-	defer linker.Close()
-
-	if err := linker.DefineWASI(); err != nil {
-		log.Fatalf("Failed to define WASI: %v", err)
-	}
-	fmt.Println("✓ Defined WASI in linker")
-
-	// Instantiate the module using the linker (it will provide WASI imports)
-	instance, err := linker.Instantiate(store, module)
+	// Instantiate with WASI support
+	mod, err := r.InstantiateWithWASI(ctx, compiled)
 	if err != nil {
 		log.Fatalf("Failed to instantiate module: %v", err)
 	}
-	fmt.Println("✓ Instantiated module")
+	defer mod.Close(ctx)
+	fmt.Println("✓ Instantiated module with WASI")
 
 	// Call the _start function
-	// No wrapper needed! instance.Call now automatically treats WASI exit(0) as success
 	fmt.Println("\nCalling _start function:")
-	_, err = instance.Call("_start")
+	startFn := mod.ExportedFunction("_start")
+	if startFn == nil {
+		log.Fatal("_start function not found")
+	}
+
+	_, err = startFn.Call(ctx)
 	if err != nil {
 		log.Fatalf("Failed to call _start: %v", err)
 	}

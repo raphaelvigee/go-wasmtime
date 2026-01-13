@@ -1,6 +1,8 @@
 package wasmtime_test
 
 import (
+	"context"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -9,26 +11,18 @@ import (
 	wasmtime "github.com/rvigee/purego-wasmtime"
 )
 
-func TestEngineCreation(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+func TestRuntimeCreation(t *testing.T) {
+	ctx := context.Background()
+	r, err := wasmtime.NewRuntime(ctx)
 	require.NoError(t, err)
-	defer engine.Close()
-}
-
-func TestStoreCreation(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
-	require.NoError(t, err)
-	defer engine.Close()
-
-	store, err := wasmtime.NewStore(engine)
-	require.NoError(t, err)
-	defer store.Close()
+	defer r.Close(ctx)
 }
 
 func TestWATCompilation(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+	r, err := wasmtime.NewRuntime(ctx)
 	require.NoError(t, err)
-	defer engine.Close()
+	defer r.Close(ctx)
 
 	wat := `
 (module
@@ -40,167 +34,179 @@ func TestWATCompilation(t *testing.T) {
 )
 `
 
-	module, err := wasmtime.NewModuleFromWAT(engine, wat)
+	compiled, err := r.CompileModule(ctx, []byte(wat))
 	require.NoError(t, err)
-	defer module.Close()
+	defer compiled.Close()
 }
 
 func TestSimpleFunctionCall(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+	r, err := wasmtime.NewRuntime(ctx)
 	require.NoError(t, err)
-	defer engine.Close()
+	defer r.Close(ctx)
 
-	store, err := wasmtime.NewStore(engine)
+	// Read WAT file
+	const watPath = "testdata/simple.wat"
+	wat, err := readFile(watPath)
 	require.NoError(t, err)
-	defer store.Close()
 
-	module, err := wasmtime.NewModuleFromWATFile(engine, "testdata/simple.wat")
+	compiled, err := r.CompileModule(ctx, wat)
 	require.NoError(t, err)
-	defer module.Close()
+	defer compiled.Close()
 
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	mod, err := r.Instantiate(ctx, compiled)
 	require.NoError(t, err)
+	defer mod.Close(ctx)
 
 	// Test that we can get the export
-	_, err = instance.GetExport("add")
-	require.NoError(t, err)
+	fn := mod.ExportedFunction("add")
+	require.NotNil(t, fn)
 
 	t.Log("Successfully instantiated module and accessed exports")
 }
 
 func TestAddFunction(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+	r, err := wasmtime.NewRuntime(ctx)
 	require.NoError(t, err)
-	defer engine.Close()
+	defer r.Close(ctx)
 
-	store, err := wasmtime.NewStore(engine)
+	wat, err := readFile("testdata/simple.wat")
 	require.NoError(t, err)
-	defer store.Close()
 
-	module, err := wasmtime.NewModuleFromWATFile(engine, "testdata/simple.wat")
+	compiled, err := r.CompileModule(ctx, wat)
 	require.NoError(t, err)
-	defer module.Close()
+	defer compiled.Close()
 
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	mod, err := r.Instantiate(ctx, compiled)
 	require.NoError(t, err)
+	defer mod.Close(ctx)
 
 	// Test add function: 5 + 7 = 12
-	results, err := instance.Call("add", int32(5), int32(7))
+	addFn := mod.ExportedFunction("add")
+	require.NotNil(t, addFn)
+
+	results, err := addFn.Call(ctx, wasmtime.EncodeI32(5), wasmtime.EncodeI32(7))
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
-	result, ok := results[0].(int32)
-	require.True(t, ok, "result should be int32")
+	result := wasmtime.DecodeI32(results[0])
 	assert.Equal(t, int32(12), result, "5 + 7 should equal 12")
 }
 
 func TestMultiplyFunction(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+	r, err := wasmtime.NewRuntime(ctx)
 	require.NoError(t, err)
-	defer engine.Close()
+	defer r.Close(ctx)
 
-	store, err := wasmtime.NewStore(engine)
+	wat, err := readFile("testdata/simple.wat")
 	require.NoError(t, err)
-	defer store.Close()
 
-	module, err := wasmtime.NewModuleFromWATFile(engine, "testdata/simple.wat")
+	compiled, err := r.CompileModule(ctx, wat)
 	require.NoError(t, err)
-	defer module.Close()
+	defer compiled.Close()
 
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	mod, err := r.Instantiate(ctx, compiled)
 	require.NoError(t, err)
+	defer mod.Close(ctx)
 
 	// Test multiply function: 6 * 7 = 42
-	results, err := instance.Call("multiply", int32(6), int32(7))
+	mulFn := mod.ExportedFunction("multiply")
+	require.NotNil(t, mulFn)
+
+	results, err := mulFn.Call(ctx, wasmtime.EncodeI32(6), wasmtime.EncodeI32(7))
 	require.NoError(t, err)
 	require.Len(t, results, 1)
 
-	result, ok := results[0].(int32)
-	require.True(t, ok, "result should be int32")
+	result := wasmtime.DecodeI32(results[0])
 	assert.Equal(t, int32(42), result, "6 * 7 should equal 42")
 }
 
 func TestMultipleFunctionCalls(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+	r, err := wasmtime.NewRuntime(ctx)
 	require.NoError(t, err)
-	defer engine.Close()
+	defer r.Close(ctx)
 
-	store, err := wasmtime.NewStore(engine)
+	wat, err := readFile("testdata/simple.wat")
 	require.NoError(t, err)
-	defer store.Close()
 
-	module, err := wasmtime.NewModuleFromWATFile(engine, "testdata/simple.wat")
+	compiled, err := r.CompileModule(ctx, wat)
 	require.NoError(t, err)
-	defer module.Close()
+	defer compiled.Close()
 
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	mod, err := r.Instantiate(ctx, compiled)
 	require.NoError(t, err)
+	defer mod.Close(ctx)
 
 	testCases := []struct {
 		name     string
 		function string
-		args     []interface{}
+		arg1     int32
+		arg2     int32
 		expected int32
 	}{
-		{"add positive", "add", []interface{}{int32(10), int32(20)}, 30},
-		{"add negative", "add", []interface{}{int32(-5), int32(15)}, 10},
-		{"add zeros", "add", []interface{}{int32(0), int32(0)}, 0},
-		{"multiply positive", "multiply", []interface{}{int32(3), int32(4)}, 12},
-		{"multiply by zero", "multiply", []interface{}{int32(5), int32(0)}, 0},
-		{"multiply negative", "multiply", []interface{}{int32(-2), int32(3)}, -6},
+		{"add positive", "add", 10, 20, 30},
+		{"add negative", "add", -5, 15, 10},
+		{"add zeros", "add", 0, 0, 0},
+		{"multiply positive", "multiply", 3, 4, 12},
+		{"multiply by zero", "multiply", 5, 0, 0},
+		{"multiply negative", "multiply", -2, 3, -6},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			results, err := instance.Call(tc.function, tc.args...)
+			fn := mod.ExportedFunction(tc.function)
+			require.NotNil(t, fn)
+
+			results, err := fn.Call(ctx, wasmtime.EncodeI32(tc.arg1), wasmtime.EncodeI32(tc.arg2))
 			require.NoError(t, err)
 			require.Len(t, results, 1)
 
-			result, ok := results[0].(int32)
-			require.True(t, ok, "result should be int32")
+			result := wasmtime.DecodeI32(results[0])
 			assert.Equal(t, tc.expected, result)
 		})
 	}
 }
 
 func TestWASIHello(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
+	ctx := context.Background()
+
+	// Create runtime with WASI configuration
+	config := wasmtime.NewRuntimeConfig().
+		WithWASI(
+			wasmtime.NewWASIConfig().
+				WithInheritStdio(),
+		)
+
+	r, err := wasmtime.NewRuntimeWithConfig(ctx, config)
 	require.NoError(t, err)
-	defer engine.Close()
+	defer r.Close(ctx)
 
-	store, err := wasmtime.NewStore(engine)
-	require.NoError(t, err)
-	defer store.Close()
-
-	// Configure WASI
-	wasiConfig, err := wasmtime.NewWASIConfig()
-	require.NoError(t, err)
-
-	wasiConfig.WithInheritStdio()
-
-	err = wasiConfig.Apply(store)
-	require.NoError(t, err)
-
-	// Create a linker and define WASI
-	linker, err := wasmtime.NewLinker(engine)
-	require.NoError(t, err)
-	defer linker.Close()
-
-	err = linker.DefineWASI()
+	wat, err := readFile("testdata/hello_wasi.wat")
 	require.NoError(t, err)
 
-	module, err := wasmtime.NewModuleFromWATFile(engine, "testdata/hello_wasi.wat")
+	compiled, err := r.CompileModule(ctx, wat)
 	require.NoError(t, err)
-	defer module.Close()
+	defer compiled.Close()
 
-	// Use the linker to instantiate (it will provide WASI imports)
-	instance, err := linker.Instantiate(store, module)
+	// Use InstantiateWithWASI for WASI modules
+	mod, err := r.InstantiateWithWASI(ctx, compiled)
 	require.NoError(t, err)
+	defer mod.Close(ctx)
 
 	// Call the _start function
-	// No wrapper needed! instance.Call now automatically treats WASI exit(0) as success
-	_, err = instance.Call("_start")
+	startFn := mod.ExportedFunction("_start")
+	require.NotNil(t, startFn)
+
+	_, err = startFn.Call(ctx)
 	require.NoError(t, err)
 
 	t.Log("WASI hello world executed successfully")
+}
+
+// Helper function to read file
+func readFile(path string) ([]byte, error) {
+	return os.ReadFile(path)
 }

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"log"
 
@@ -8,71 +9,67 @@ import (
 )
 
 func main() {
-	fmt.Println("=== Simple Wasmtime Example ===")
+	ctx := context.Background()
 
-	// Create an engine
-	engine, err := wasmtime.NewEngine()
+	// Create runtime
+	r, err := wasmtime.NewRuntime(ctx)
 	if err != nil {
-		log.Fatalf("Failed to create engine: %v", err)
+		log.Fatalf("Failed to create runtime: %v", err)
 	}
-	defer engine.Close()
-	fmt.Println("✓ Created engine")
+	defer r.Close(ctx)
 
-	// Create a store
-	store, err := wasmtime.NewStore(engine)
-	if err != nil {
-		log.Fatalf("Failed to create store: %v", err)
-	}
-	defer store.Close()
-	fmt.Println("✓ Created store")
-
-	// Define a simple WAT module
+	// Compile WAT module
 	wat := `
-(module
-  (func (export "add") (param i32 i32) (result i32)
-    local.get 0
-    local.get 1
-    i32.add
-  )
-  (func (export "subtract") (param i32 i32) (result i32)
-    local.get 0
-    local.get 1
-    i32.sub
-  )
-)
-`
+	(module
+	  (func (export "add") (param i32 i32) (result i32)
+	    local.get 0
+	    local.get 1
+	    i32.add
+	  )
+	  (func (export "multiply") (param i32 i32) (result i32)
+	    local.get 0
+	    local.get 1
+	    i32.mul
+	  )
+	)
+	`
 
-	// Compile the module
-	module, err := wasmtime.NewModuleFromWAT(engine, wat)
+	compiled, err := r.CompileModule(ctx, []byte(wat))
 	if err != nil {
 		log.Fatalf("Failed to compile module: %v", err)
 	}
-	defer module.Close()
-	fmt.Println("✓ Compiled WAT module")
+	defer compiled.Close()
 
-	// Instantiate the module
-	instance, err := wasmtime.NewInstance(store, module, nil)
+	// Instantiate module
+	mod, err := r.Instantiate(ctx, compiled)
 	if err != nil {
-		log.Fatalf("Failed to instantiate module: %v", err)
+		log.Fatalf("Failed to instantiate: %v", err)
 	}
-	fmt.Println("✓ Instantiated module")
+	defer mod.Close(ctx)
 
-	// Get exported functions
-	addFunc, err := instance.GetExport("add")
+	// Call add function
+	addFn := mod.ExportedFunction("add")
+	if addFn == nil {
+		log.Fatal("add function not found")
+	}
+
+	results, err := addFn.Call(ctx, wasmtime.EncodeI32(5), wasmtime.EncodeI32(7))
 	if err != nil {
-		log.Fatalf("Failed to get 'add' export: %v", err)
+		log.Fatalf("Failed to call add: %v", err)
 	}
-	fmt.Println("✓ Found 'add' function export")
 
-	subFunc, err := instance.GetExport("subtract")
+	fmt.Printf("5 + 7 = %d\n", wasmtime.DecodeI32(results[0]))
+
+	// Call multiply function
+	mulFn := mod.ExportedFunction("multiply")
+	if mulFn == nil {
+		log.Fatal("multiply function not found")
+	}
+
+	results, err = mulFn.Call(ctx, wasmtime.EncodeI32(6), wasmtime.EncodeI32(7))
 	if err != nil {
-		log.Fatalf("Failed to get 'subtract' export: %v", err)
+		log.Fatalf("Failed to call multiply: %v", err)
 	}
-	fmt.Println("✓ Found 'subtract' function export")
 
-	_ = addFunc
-	_ = subFunc
-
-	fmt.Println("\nSuccessfully created and instantiated WebAssembly module!")
-	fmt.Println("Functions 'add' and 'subtract' are ready to use.")
+	fmt.Printf("6 * 7 = %d\n", wasmtime.DecodeI32(results[0]))
 }

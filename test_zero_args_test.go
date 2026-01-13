@@ -8,27 +8,15 @@ import (
 	wasmtime "github.com/rvigee/purego-wasmtime"
 )
 
-func TestZeroArgsFunction(t *testing.T) {
-	engine, err := wasmtime.NewEngine()
-	require.NoError(t, err)
-	defer engine.Close()
+func TestZeroArgs(t *testing.T) {
+	ts := newTestSetup(t, "testdata/zero_args.wat", false)
+	defer ts.cleanup()
 
-	store, err := wasmtime.NewStore(engine)
-	require.NoError(t, err)
-	defer store.Close()
+	fn := ts.module.ExportedFunction("get_forty_two")
+	require.NotNil(t, fn, "Function get_forty_two should be exported")
 
-	module, err := wasmtime.NewModuleFromWATFile(engine, "testdata/zero_args.wat")
+	results, err := fn.Call(ts.ctx)
 	require.NoError(t, err)
-	defer module.Close()
-
-	instance, err := wasmtime.NewInstance(store, module, nil)
-	require.NoError(t, err)
-
-	// Test calling a function with NO arguments
-	t.Log("Calling get_forty_two() with no arguments...")
-	results, err := instance.Call("get_forty_two")
-	if err != nil {
-		t.Fatalf("Failed to call function: %v", err)
-	}
-	t.Logf("Results: %v", results)
+	require.Len(t, results, 1)
+	require.Equal(t, int32(42), wasmtime.DecodeI32(results[0]))
 }

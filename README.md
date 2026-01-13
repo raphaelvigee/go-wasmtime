@@ -27,17 +27,19 @@ No additional setup required! The library will automatically download the approp
 package main
 
 import (
+    "context"
+    "fmt"
     "log"
+    
     wasmtime "github.com/rvigee/purego-wasmtime"
 )
 
 func main() {
-    // Create engine and store
-    engine, _ := wasmtime.NewEngine()
-    defer engine.Close()
+    ctx := context.Background()
     
-    store, _ := wasmtime.NewStore(engine)
-    defer store.Close()
+    // Create runtime
+    r, _ := wasmtime.NewRuntime(ctx)
+    defer r.Close(ctx)
     
     // Compile WAT to module
     wat := `
@@ -49,15 +51,22 @@ func main() {
       )
     )`
     
-    module, _ := wasmtime.NewModuleFromWAT(engine, wat)
-    defer module.Close()
+    compiled, _ := r.CompileModule(ctx, []byte(wat))
+    defer compiled.Close()
     
     // Instantiate
-    instance, _ := wasmtime.NewInstance(store, module, nil)
+    mod, _ := r.Instantiate(ctx, compiled)
+    defer mod.Close(ctx)
     
     // Get exported function
-    addFunc, _ := instance.GetExport("add")
-    log.Printf("Function exported: %v", addFunc != nil)
+    addFn := mod.ExportedFunction("add")
+    
+    // Call function with encoded parameters
+    results, _ := addFn.Call(ctx, wasmtime.EncodeI32(5), wasmtime.EncodeI32(7))
+    
+    // Decode result
+    result := wasmtime.DecodeI32(results[0])
+    fmt.Printf("5 + 7 = %d\n", result)
 }
 ```
 
@@ -67,63 +76,80 @@ func main() {
 package main
 
 import (
+    "context"
+    "os"
+    
     wasmtime "github.com/rvigee/purego-wasmtime"
 )
 
 func main() {
-    engine, _ := wasmtime.NewEngine()
-    defer engine.Close()
+    ctx := context.Background()
     
-    store, _ := wasmtime.NewStore(engine)
-    defer store.Close()
+    // Create runtime with WASI configuration
+    config := wasmtime.NewRuntimeConfig().
+        WithWASI(
+            wasmtime.NewWASIConfig().
+                WithInheritStdio().
+                WithEnv("KEY", "value").
+                WithArgs("program", "arg1"),
+        )
     
-    // Configure WASI
-    wasiConfig, _ := wasmtime.NewWASIConfig()
-    wasiConfig.
-        WithInheritStdio().
-        WithEnv(map[string]string{"KEY": "value"}).
-        WithArgs([]string{"program", "arg1"}).
-        WithPreopenDir("/tmp", "/tmp")
+    r, _ := wasmtime.NewRuntimeWithConfig(ctx, config)
+    defer r.Close(ctx)
     
-    wasiConfig.Apply(store)
+    // Load and compile WASI module
+    wat, _ := os.ReadFile("program.wat")
+    compiled, _ := r.CompileModule(ctx, wat)
+    defer compiled.Close()
     
-    // Load and run WASI module
-    module, _ := wasmtime.NewModuleFromWATFile(engine, "program.wat")
-    defer module.Close()
+    // Instantiate with WASI support
+    mod, _ := r.InstantiateWithWASI(ctx, compiled)
+    defer mod.Close(ctx)
     
-    instance, _ := wasmtime.NewInstance(store, module, nil)
-    instance.Call("_start")
+    // Call _start
+    startFn := mod.ExportedFunction("_start")
+    startFn.Call(ctx)
 }
 ```
 
 ## API Overview
 
-### Engine & Store
+### Runtime
 
-- `NewEngine()` - Create a WebAssembly engine
-- `NewStore(engine)` - Create an execution store
+- `NewRuntime(ctx)` - Create a WebAssembly runtime
+- `NewRuntimeWithConfig(ctx, config)` - Create runtime with configuration
+- `runtime.CompileModule(ctx, binary)` - Compile WAT or WASM
+- `runtime.Instantiate(ctx, compiled)` - Instantiate without WASI
+- `runtime.InstantiateWithWASI(ctx, compiled)` - Instantiate with WASI
+- `runtime.Close(ctx)` - Close and cleanup
 
-### Modules
+### Module & Functions
 
-- `NewModuleFromWAT(engine, wat)` - Compile WAT text
-- `NewModuleFromWATFile(engine, path)` - Load WAT from file
-- `NewModuleFromWASM(engine, bytes)` - Compile WASM binary
-- `NewModuleFromWASMFile(engine, path)` - Load WASM from file
+- `module.ExportedFunction(name)` - Get an exported function
+- `function.Call(ctx, params...)` - Call function with encoded parameters
+- `module.Close(ctx)` - Close module
 
-### Instances
+### Value Encoding/Decoding
 
-- `NewInstance(store, module, imports)` - Instantiate a module
-- `instance.GetExport(name)` - Get exported function/memory
-- `instance.Call(name, args...)` - Call exported function
+- `EncodeI32(v)` / `DecodeI32(v)` - int32 values
+- `EncodeI64(v)` / `DecodeI64(v)` - int64 values
+- `EncodeF32(v)` / `DecodeF32(v)` - float32 values
+- `EncodeF64(v)` / `DecodeF64(v)` - float64 values
 
 ### WASI Configuration
 
 - `NewWASIConfig()` - Create WASI configuration
-- `.WithArgs([]string)` - Set command-line arguments
-- `.WithEnv(map[string]string)` - Set environment variables
+- `.WithArgs(args...)` - Set command-line arguments (variadic)
+- `.WithEnv(key, value)` - Set single environment variable
+- `.WithEnvs(map[string]string)` - Set multiple environment variables
 - `.WithPreopenDir(host, guest)` - Grant directory access
 - `.WithInheritStdio()` - Inherit stdin/stdout/stderr
-- `.Apply(store)` - Apply configuration to store
+- `.WithInheritArgs()` / `.WithInheritEnv()` - Inherit from host
+
+### Runtime Configuration
+
+- `NewRuntimeConfig()` - Create runtime configuration
+- `.WithWASI(wasiConfig)` - Add WASI support
 
 ## Environment Variables
 

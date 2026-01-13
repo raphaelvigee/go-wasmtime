@@ -15,7 +15,11 @@ type (
 	wasm_functype_t    uintptr
 	wasi_config_t      uintptr
 	wasmtime_linker_t  uintptr
+	wasm_valtype_t     uintptr // Pointer to value type
 )
+
+// wasm_valkind_t represents the kind of a WebAssembly value type
+type wasm_valkind_t = uint8
 
 // wasmtime_func_t - From C header: struct with store_id and __private pointer
 type wasmtime_func_t struct {
