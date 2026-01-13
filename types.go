@@ -84,6 +84,17 @@ type wasmtime_val_t struct {
 	of       wasmtime_val_raw // 24 bytes at offset 8
 }
 
+// WebAssembly value type kinds
+const (
+	WASM_I32       = 0
+	WASM_I64       = 1
+	WASM_F32       = 2
+	WASM_F64       = 3
+	WASM_V128      = 4
+	WASM_FUNCREF   = 5
+	WASM_EXTERNREF = 6
+)
+
 // Helper to get i32 from wasmtime_val_t
 func (v *wasmtime_val_t) GetI32() int32 {
 	return *(*int32)(unsafe.Pointer(&v.of.data[0]))
@@ -104,6 +115,61 @@ func (v *wasmtime_val_t) GetI64() int64 {
 func (v *wasmtime_val_t) SetI64(val int64) {
 	v.kind = 1
 	*(*int64)(unsafe.Pointer(&v.of.data[0])) = val
+}
+
+// Helper to get f32 from wasmtime_val_t
+func (v *wasmtime_val_t) GetF32() float32 {
+	return *(*float32)(unsafe.Pointer(&v.of.data[0]))
+}
+
+// Helper to set f32 in wasmtime_val_t
+func (v *wasmtime_val_t) SetF32(val float32) {
+	v.kind = 2
+	*(*float32)(unsafe.Pointer(&v.of.data[0])) = val
+}
+
+// Helper to get f64 from wasmtime_val_t
+func (v *wasmtime_val_t) GetF64() float64 {
+	return *(*float64)(unsafe.Pointer(&v.of.data[0]))
+}
+
+// Helper to set f64 in wasmtime_val_t
+func (v *wasmtime_val_t) SetF64(val float64) {
+	v.kind = 3
+	*(*float64)(unsafe.Pointer(&v.of.data[0])) = val
+}
+
+// Helper to get v128 from wasmtime_val_t
+func (v *wasmtime_val_t) GetV128() [16]byte {
+	return *(*[16]byte)(unsafe.Pointer(&v.of.data[0]))
+}
+
+// Helper to set v128 in wasmtime_val_t
+func (v *wasmtime_val_t) SetV128(val [16]byte) {
+	v.kind = 4
+	*(*[16]byte)(unsafe.Pointer(&v.of.data[0])) = val
+}
+
+// Helper to get funcref from wasmtime_val_t
+func (v *wasmtime_val_t) GetFuncRef() wasmtime_func_t {
+	return *(*wasmtime_func_t)(unsafe.Pointer(&v.of.data[0]))
+}
+
+// Helper to set funcref in wasmtime_val_t
+func (v *wasmtime_val_t) SetFuncRef(val wasmtime_func_t) {
+	v.kind = 5
+	*(*wasmtime_func_t)(unsafe.Pointer(&v.of.data[0])) = val
+}
+
+// Helper to get externref from wasmtime_val_t
+func (v *wasmtime_val_t) GetExternRef() uintptr {
+	return *(*uintptr)(unsafe.Pointer(&v.of.data[0]))
+}
+
+// Helper to set externref in wasmtime_val_t
+func (v *wasmtime_val_t) SetExternRef(val uintptr) {
+	v.kind = 6
+	*(*uintptr)(unsafe.Pointer(&v.of.data[0])) = val
 }
 
 // wasmtime_extern_kind_t enum values

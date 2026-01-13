@@ -162,6 +162,21 @@ func toWasmValue(v interface{}) (wasmtime_val_t, error) {
 	case int:
 		result.SetI32(int32(val))
 		return result, nil
+	case float32:
+		result.SetF32(val)
+		return result, nil
+	case float64:
+		result.SetF64(val)
+		return result, nil
+	case [16]byte:
+		result.SetV128(val)
+		return result, nil
+	case wasmtime_func_t:
+		result.SetFuncRef(val)
+		return result, nil
+	case uintptr:
+		result.SetExternRef(val)
+		return result, nil
 	default:
 		return wasmtime_val_t{}, fmt.Errorf("unsupported type: %T", v)
 	}
@@ -170,10 +185,20 @@ func toWasmValue(v interface{}) (wasmtime_val_t, error) {
 // fromWasmValue converts a wasmtime value back to a Go value
 func fromWasmValue(v *wasmtime_val_t) (interface{}, error) {
 	switch v.kind {
-	case 0: // i32
+	case WASM_I32:
 		return v.GetI32(), nil
-	case 1: // i64
+	case WASM_I64:
 		return v.GetI64(), nil
+	case WASM_F32:
+		return v.GetF32(), nil
+	case WASM_F64:
+		return v.GetF64(), nil
+	case WASM_V128:
+		return v.GetV128(), nil
+	case WASM_FUNCREF:
+		return v.GetFuncRef(), nil
+	case WASM_EXTERNREF:
+		return v.GetExternRef(), nil
 	default:
 		return nil, fmt.Errorf("unsupported wasm type: %d", v.kind)
 	}
