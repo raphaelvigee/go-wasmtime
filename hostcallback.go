@@ -24,6 +24,7 @@ type registeredFunction struct {
 	storeCtx wasmtime_context_t
 	module   api.Module      // For GoModuleFunc
 	ctx      context.Context // Context for host function execution
+	bindings *bindings       // Bindings for C function calls
 }
 
 var globalRegistry = &hostFunctionRegistry{
@@ -65,7 +66,7 @@ func hostCallbackWrapper(env uintptr, caller uintptr, args *wasmtime_val_t, narg
 		regFunc.builder.goFunc(ctx, stack)
 	} else if regFunc.builder.goModuleFunc != nil {
 		// For GoModuleFunc, create a wrapper module that accesses exports from the caller
-		wrapperMod := &callerModule{caller: caller, store: regFunc.storeCtx}
+		wrapperMod := &callerModule{caller: caller, store: regFunc.storeCtx, bindings: regFunc.bindings}
 		regFunc.builder.goModuleFunc(ctx, wrapperMod, stack)
 	} else if regFunc.builder.goFunction != nil {
 		paramSlice := stack[:nargs]
@@ -84,7 +85,7 @@ func hostCallbackWrapper(env uintptr, caller uintptr, args *wasmtime_val_t, narg
 		// Create a trap with the error message
 		errMsg := callErr.Error()
 		errBytes := []byte(errMsg + "\x00")
-		trap := wasm_trap_new(&errBytes[0], uintptr(len(errMsg)))
+		trap := regFunc.bindings.wasm_trap_new(&errBytes[0], uintptr(len(errMsg)))
 		// Store trap pointer somewhere the C API can access it
 		// Since we can't modify the callback signature, we return a non-zero value
 		// However, this won't work properly with the current wasmtime callback API
@@ -147,39 +148,39 @@ func convertUint64ToWasmValue(value uint64, valueType api.ValueType, val *wasmti
 }
 
 // createFuncType creates a wasm_functype_t from parameter and result types
-func createFuncType(paramTypes, resultTypes []api.ValueType) (wasm_functype_t, func()) {
+func createFuncType(bindings *bindings, paramTypes, resultTypes []api.ValueType) (wasm_functype_t, func()) {
 	// Create parameter type vector
 	var params wasm_valtype_vec_t
 	if len(paramTypes) == 0 {
-		wasm_valtype_vec_new_empty(&params)
+		bindings.wasm_valtype_vec_new_empty(&params)
 	} else {
-		wasm_valtype_vec_new_uninitialized(&params, uintptr(len(paramTypes)))
+		bindings.wasm_valtype_vec_new_uninitialized(&params, uintptr(len(paramTypes)))
 		paramArray := unsafe.Slice((*wasm_valtype_t)(unsafe.Pointer(params.data)), len(paramTypes))
 		for i, pt := range paramTypes {
-			paramArray[i] = wasm_valtype_new(apiValueTypeToWasm(pt))
+			paramArray[i] = bindings.wasm_valtype_new(apiValueTypeToWasm(pt))
 		}
 	}
 
 	// Create result type vector
 	var results wasm_valtype_vec_t
 	if len(resultTypes) == 0 {
-		wasm_valtype_vec_new_empty(&results)
+		bindings.wasm_valtype_vec_new_empty(&results)
 	} else {
-		wasm_valtype_vec_new_uninitialized(&results, uintptr(len(resultTypes)))
+		bindings.wasm_valtype_vec_new_uninitialized(&results, uintptr(len(resultTypes)))
 		resultArray := unsafe.Slice((*wasm_valtype_t)(unsafe.Pointer(results.data)), len(resultTypes))
 		for i, rt := range resultTypes {
-			resultArray[i] = wasm_valtype_new(apiValueTypeToWasm(rt))
+			resultArray[i] = bindings.wasm_valtype_new(apiValueTypeToWasm(rt))
 		}
 	}
 
 	// Create function type - pass pointers to the vectors
-	funcType := wasm_functype_new(&params, &results)
+	funcType := bindings.wasm_functype_new(&params, &results)
 
 	// Cleanup function
 	cleanup := func() {
-		wasm_valtype_vec_delete(&params)
-		wasm_valtype_vec_delete(&results)
-		wasm_functype_delete(funcType)
+		bindings.wasm_valtype_vec_delete(&params)
+		bindings.wasm_valtype_vec_delete(&results)
+		bindings.wasm_functype_delete(funcType)
 	}
 
 	return funcType, cleanup
@@ -206,7 +207,7 @@ func apiValueTypeToWasm(vt api.ValueType) uint8 {
 }
 
 // registerHostFunction registers a Go function and returns its ID and callback pointer
-func (r *hostFunctionRegistry) register(builder *hostFunctionBuilder, storeCtx wasmtime_context_t, module api.Module, ctx context.Context) (uintptr, uintptr) {
+func (r *hostFunctionRegistry) register(builder *hostFunctionBuilder, storeCtx wasmtime_context_t, bindings *bindings, module api.Module, ctx context.Context) (uintptr, uintptr) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 
@@ -224,6 +225,7 @@ func (r *hostFunctionRegistry) register(builder *hostFunctionBuilder, storeCtx w
 		storeCtx: storeCtx,
 		module:   module,
 		ctx:      ctx,
+		bindings: bindings,
 	}
 
 	// Prevent GC of the function

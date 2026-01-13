@@ -14,6 +14,7 @@ type global struct {
 	storeCtx wasmtime_context_t
 	valType  api.ValueType
 	mutable  bool
+	bindings *bindings
 }
 
 func (g *global) Type() api.ValueType {
@@ -22,7 +23,7 @@ func (g *global) Type() api.ValueType {
 
 func (g *global) Get(ctx context.Context) uint64 {
 	var val wasmtime_val_t
-	wasmtime_global_get(g.storeCtx, &g.val, &val)
+	g.bindings.wasmtime_global_get(g.storeCtx, &g.val, &val)
 
 	// Convert wasmtime_val_t to uint64
 	switch val.kind {
@@ -65,6 +66,6 @@ func (g *global) Set(ctx context.Context, v uint64) error {
 		return fmt.Errorf("unsupported global type: %v", g.valType)
 	}
 
-	wasmtime_global_set(g.storeCtx, &g.val, &val)
+	g.bindings.wasmtime_global_set(g.storeCtx, &g.val, &val)
 	return nil
 }

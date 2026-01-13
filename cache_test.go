@@ -64,7 +64,6 @@ func TestCompilationCache(t *testing.T) {
 }
 
 func TestRuntimeWithCache(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	t.Run("runtime_with_cache", func(t *testing.T) {
 		cache := NewCompilationCache()

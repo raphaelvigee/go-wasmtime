@@ -21,7 +21,6 @@ func (a *addFunc) Call(ctx context.Context, params []uint64) ([]uint64, error) {
 }
 
 func TestHostFunctionBuilder(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)
@@ -207,7 +206,6 @@ func TestGoFunctionAdapter(t *testing.T) {
 }
 
 func TestHostModuleBuilderChaining(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)
@@ -234,7 +232,6 @@ func TestHostModuleBuilderChaining(t *testing.T) {
 
 func TestHostFunctionIntegration(t *testing.T) {
 
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)
@@ -317,7 +314,6 @@ func TestHostFunctionIntegration(t *testing.T) {
 }
 
 func TestHostFunctionWithMemoryAccess(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)

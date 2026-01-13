@@ -178,6 +178,8 @@ table.Set(ctx, 0, val)             // Set element at index
 - `NewRuntimeConfig()` - Create runtime configuration
 - `.WithWASI(wasiConfig)` - Add WASI support
 - `.WithCompilationCache(cache)` - Enable compilation caching for faster recompilation
+- `.WithLibraryPath(path)` - Use custom wasmtime library path (disables auto-download)
+- `.WithAutoDownload(version)` - Enable auto-download with specific version (empty string = default v40.0.0)
 
 **Compilation Caching:**
 
@@ -235,9 +237,48 @@ defer hostModule.Close(ctx)
 // Note: Full C API integration pending
 ```
 
-## Environment Variables
+## Advanced Configuration
 
-- `WASMTIME_LIB_PATH` - Override automatic download with custom wasmtime library path
+### Custom Library Path
+
+You can use a custom wasmtime library instead of the auto-downloaded one:
+
+```go
+config := wasmtime.NewRuntimeConfig().
+    WithLibraryPath("/custom/path/to/libwasmtime.dylib")
+
+r, err := wasmtime.NewRuntimeWithConfig(ctx, config)
+```
+
+### Specify Wasmtime Version
+
+You can specify which version of wasmtime to auto-download:
+
+```go
+config := wasmtime.NewRuntimeConfig().
+    WithAutoDownload("v39.0.0")  // Download specific version
+
+r, err := wasmtime.NewRuntimeWithConfig(ctx, config)
+
+// Or use empty string for default version (v40.0.0)
+config := wasmtime.NewRuntimeConfig().
+    WithAutoDownload("")  // Uses default version
+```
+
+### Using Environment Variable for Library Path
+
+If you prefer using an environment variable:
+
+```go
+import "os"
+
+config := wasmtime.NewRuntimeConfig()
+if customPath := os.Getenv("WASMTIME_LIB_PATH"); customPath != "" {
+    config = config.WithLibraryPath(customPath)
+}
+
+r, err := wasmtime.NewRuntimeWithConfig(ctx, config)
+```
 
 ## Platform Support
 

@@ -26,7 +26,6 @@ func TestEncodeDecodeExternref(t *testing.T) {
 }
 
 func TestGlobalAccess(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)
@@ -63,7 +62,6 @@ func TestGlobalAccess(t *testing.T) {
 }
 
 func TestTableAccess(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)

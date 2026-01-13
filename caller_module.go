@@ -9,8 +9,9 @@ import (
 // callerModule is a wrapper that provides access to the calling module's exports
 // This is used for GoModuleFunc to access the calling WASM module's memory and other exports
 type callerModule struct {
-	caller uintptr
-	store  wasmtime_context_t
+	caller   uintptr
+	store    wasmtime_context_t
+	bindings *bindings
 }
 
 func (cm *callerModule) Name() string {
@@ -29,7 +30,7 @@ func (cm *callerModule) ExportedMemory(name string) api.Memory {
 	nameBytes := []byte(name + "\x00")
 	var ext wasmtime_extern_t
 
-	found := wasmtime_caller_export_get(cm.caller, &nameBytes[0], uintptr(len(name)), &ext)
+	found := cm.bindings.wasmtime_caller_export_get(cm.caller, &nameBytes[0], uintptr(len(name)), &ext)
 	if !found || ext.kind != WASMTIME_EXTERN_MEMORY {
 		return nil
 	}
@@ -39,6 +40,7 @@ func (cm *callerModule) ExportedMemory(name string) api.Memory {
 		val:      *mem,
 		store:    0,
 		storeCtx: cm.store,
+		bindings: cm.bindings,
 	}
 }
 
@@ -46,7 +48,7 @@ func (cm *callerModule) ExportedGlobal(name string) api.Global {
 	nameBytes := []byte(name + "\x00")
 	var ext wasmtime_extern_t
 
-	found := wasmtime_caller_export_get(cm.caller, &nameBytes[0], uintptr(len(name)), &ext)
+	found := cm.bindings.wasmtime_caller_export_get(cm.caller, &nameBytes[0], uintptr(len(name)), &ext)
 	if !found || ext.kind != WASMTIME_EXTERN_GLOBAL {
 		return nil
 	}
@@ -56,6 +58,7 @@ func (cm *callerModule) ExportedGlobal(name string) api.Global {
 		val:      *glob,
 		store:    0,
 		storeCtx: cm.store,
+		bindings: cm.bindings,
 	}
 }
 
@@ -63,7 +66,7 @@ func (cm *callerModule) ExportedTable(name string) api.Table {
 	nameBytes := []byte(name + "\x00")
 	var ext wasmtime_extern_t
 
-	found := wasmtime_caller_export_get(cm.caller, &nameBytes[0], uintptr(len(name)), &ext)
+	found := cm.bindings.wasmtime_caller_export_get(cm.caller, &nameBytes[0], uintptr(len(name)), &ext)
 	if !found || ext.kind != WASMTIME_EXTERN_TABLE {
 		return nil
 	}
@@ -73,6 +76,7 @@ func (cm *callerModule) ExportedTable(name string) api.Table {
 		val:      *tbl,
 		store:    0,
 		storeCtx: cm.store,
+		bindings: cm.bindings,
 	}
 }
 

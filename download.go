@@ -18,14 +18,15 @@ const (
 )
 
 // getLibraryPath returns the path to the wasmtime library, downloading it if necessary.
-func getLibraryPath() (string, error) {
-	// Check for custom path in environment variable
-	if customPath := os.Getenv("WASMTIME_LIB_PATH"); customPath != "" {
-		return customPath, nil
+// If autoDownload is false, returns an error if the library is not found in cache.
+func getLibraryPath(autoDownload bool, version string) (string, error) {
+	// Use default version if not specified
+	if version == "" {
+		version = wasmtimeVersion
 	}
 
 	// Get cache directory
-	cacheDir, err := getCacheDir()
+	cacheDir, err := getCacheDir(version)
 	if err != nil {
 		return "", fmt.Errorf("failed to get cache directory: %w", err)
 	}
@@ -36,8 +37,13 @@ func getLibraryPath() (string, error) {
 		return libPath, nil
 	}
 
+	// If auto-download is disabled, return error
+	if !autoDownload {
+		return "", fmt.Errorf("wasmtime library not found in cache and auto-download is disabled")
+	}
+
 	// Download and extract the library
-	if err := downloadAndExtractLibrary(cacheDir); err != nil {
+	if err := downloadAndExtractLibrary(cacheDir, version); err != nil {
 		return "", fmt.Errorf("failed to download wasmtime library: %w", err)
 	}
 
@@ -45,7 +51,7 @@ func getLibraryPath() (string, error) {
 }
 
 // getCacheDir returns the cache directory for wasmtime libraries.
-func getCacheDir() (string, error) {
+func getCacheDir(version string) (string, error) {
 	var baseDir string
 
 	switch runtime.GOOS {
@@ -54,9 +60,9 @@ func getCacheDir() (string, error) {
 		if err != nil {
 			return "", err
 		}
-		baseDir = filepath.Join(home, ".local", "share", "purego-wasmtime", wasmtimeVersion)
+		baseDir = filepath.Join(home, ".local", "share", "purego-wasmtime", version)
 	case "windows":
-		baseDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "purego-wasmtime", wasmtimeVersion)
+		baseDir = filepath.Join(os.Getenv("LOCALAPPDATA"), "purego-wasmtime", version)
 	default:
 		return "", fmt.Errorf("unsupported platform: %s", runtime.GOOS)
 	}
@@ -83,7 +89,7 @@ func getLibraryFilename() string {
 }
 
 // getDownloadURL returns the download URL for the current platform.
-func getDownloadURL() (string, error) {
+func getDownloadURL(version string) (string, error) {
 	var platform string
 
 	goos := runtime.GOOS
@@ -121,24 +127,24 @@ func getDownloadURL() (string, error) {
 		return "", fmt.Errorf("unsupported operating system: %s", goos)
 	}
 
-	filename := fmt.Sprintf("wasmtime-%s-%s-c-api", wasmtimeVersion, platform)
+	filename := fmt.Sprintf("wasmtime-%s-%s-c-api", version, platform)
 	if goos == "windows" {
 		filename += ".zip"
 	} else {
 		filename += ".tar.xz"
 	}
 
-	return fmt.Sprintf("%s/%s/%s", wasmtimeBaseURL, wasmtimeVersion, filename), nil
+	return fmt.Sprintf("%s/%s/%s", wasmtimeBaseURL, version, filename), nil
 }
 
 // downloadAndExtractLibrary downloads and extracts the wasmtime library.
-func downloadAndExtractLibrary(cacheDir string) error {
-	url, err := getDownloadURL()
+func downloadAndExtractLibrary(cacheDir string, version string) error {
+	url, err := getDownloadURL(version)
 	if err != nil {
 		return err
 	}
 
-	fmt.Printf("Downloading wasmtime %s for %s/%s...\n", wasmtimeVersion, runtime.GOOS, runtime.GOARCH)
+	fmt.Printf("Downloading wasmtime %s for %s/%s...\n", version, runtime.GOOS, runtime.GOARCH)
 
 	// Download the archive
 	resp, err := http.Get(url)

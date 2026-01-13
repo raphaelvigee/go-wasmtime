@@ -141,22 +141,22 @@ func (hmb *hostModuleBuilder) Instantiate(ctx context.Context) error {
 		return fmt.Errorf("host module builder has no associated runtime")
 	}
 
-	storeCtx := wasmtime_store_context(hmb.runtime.store)
+	storeCtx := hmb.runtime.bindings.wasmtime_store_context(hmb.runtime.store)
 
 	// Register each function with the linker
 	for _, fn := range hmb.functions {
 		// Create function type
-		funcType, cleanup := createFuncType(fn.paramTypes, fn.resultTypes)
+		funcType, cleanup := createFuncType(hmb.runtime.bindings, fn.paramTypes, fn.resultTypes)
 		defer cleanup()
 
 		// Register function in global registry
-		funcID, callbackPtr := globalRegistry.register(fn, storeCtx, nil, ctx)
+		funcID, callbackPtr := globalRegistry.register(fn, storeCtx, hmb.runtime.bindings, nil, ctx)
 
 		// Get callback pointer
 
 		// Create wasmtime function
 		var wasmFunc wasmtime_func_t
-		wasmtime_func_new(
+		hmb.runtime.bindings.wasmtime_func_new(
 			storeCtx,
 			funcType,
 			callbackPtr,
@@ -175,7 +175,7 @@ func (hmb *hostModuleBuilder) Instantiate(ctx context.Context) error {
 		moduleBytes := []byte(hmb.moduleName + "\000")
 		nameBytes := []byte(fn.name + "\000")
 
-		err := wasmtime_linker_define(
+		err := hmb.runtime.bindings.wasmtime_linker_define(
 			hmb.linker,
 			storeCtx, // Add the missing store context
 			&moduleBytes[0],
@@ -186,7 +186,7 @@ func (hmb *hostModuleBuilder) Instantiate(ctx context.Context) error {
 		)
 
 		if err != 0 {
-			wasmtime_error_delete(err)
+			hmb.runtime.bindings.wasmtime_error_delete(err)
 			return fmt.Errorf("failed to define host function %s::%s", hmb.moduleName, fn.name)
 		}
 	}

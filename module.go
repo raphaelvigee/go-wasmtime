@@ -27,9 +27,10 @@ var bufferPool = sync.Pool{
 
 // module implements api.Module for an instantiated WebAssembly module.
 type module struct {
-	inst  wasmtime_instance_t
-	store wasmtime_store_t
-	name  string
+	inst     wasmtime_instance_t
+	store    wasmtime_store_t
+	name     string
+	bindings *bindings
 }
 
 func (m *module) Name() string {
@@ -51,15 +52,15 @@ func (m *module) ExportedFunction(name string) api.Function {
 		name:     name,
 		val:      *funcPtr,
 		store:    m.store,
-		storeCtx: 0, // will be set below
+		storeCtx: m.bindings.wasmtime_store_context(m.store),
 		fnCache:  nil,
+		bindings: m.bindings,
 	}
 
 	// Pre-populate definition to cache types
 	def := f.Definition()
 	f.paramTypes = def.ParamTypes()
 	f.resultTypes = def.ResultTypes()
-	f.storeCtx = wasmtime_store_context(f.store)
 
 	return f
 }
@@ -80,8 +81,8 @@ func (m *module) getExport(name string) (*wasmtime_extern_t, error) {
 	ext := new(wasmtime_extern_t)
 	nameByte := []byte(name + "\000")
 
-	storeCtx := wasmtime_store_context(m.store)
-	ok := wasmtime_instance_export_get(storeCtx, &m.inst, &nameByte[0], uintptr(len(name)), ext)
+	storeCtx := m.bindings.wasmtime_store_context(m.store)
+	ok := m.bindings.wasmtime_instance_export_get(storeCtx, &m.inst, &nameByte[0], uintptr(len(name)), ext)
 
 	runtime.KeepAlive(m)
 	runtime.KeepAlive(name)
@@ -107,7 +108,8 @@ func (m *module) ExportedMemory(name string) api.Memory {
 	return &memory{
 		val:      *memPtr,
 		store:    m.store,
-		storeCtx: wasmtime_store_context(m.store),
+		storeCtx: m.bindings.wasmtime_store_context(m.store),
+		bindings: m.bindings,
 	}
 }
 
@@ -125,11 +127,12 @@ func (m *module) ExportedGlobal(name string) api.Global {
 	return &global{
 		val:      *globalPtr,
 		store:    m.store,
-		storeCtx: wasmtime_store_context(m.store),
+		storeCtx: m.bindings.wasmtime_store_context(m.store),
 		// Wasmtime C API limitation: No wasmtime_global_type() or similar API available.
 		// Type and mutability cannot be queried, so we use safe defaults.
-		valType: api.ValueTypeI32, // Default - actual type depends on the global
-		mutable: true,             // Default - assume mutable for safety
+		valType:  api.ValueTypeI32, // Default - actual type depends on the global
+		mutable:  true,             // Default - assume mutable for safety
+		bindings: m.bindings,
 	}
 }
 
@@ -147,7 +150,8 @@ func (m *module) ExportedTable(name string) api.Table {
 	return &table{
 		val:      *tablePtr,
 		store:    m.store,
-		storeCtx: wasmtime_store_context(m.store),
+		storeCtx: m.bindings.wasmtime_store_context(m.store),
+		bindings: m.bindings,
 	}
 }
 
@@ -155,25 +159,26 @@ type memory struct {
 	val      wasmtime_memory_t
 	store    wasmtime_store_t
 	storeCtx wasmtime_context_t
+	bindings *bindings
 }
 
 func (m *memory) Data(ctx context.Context) unsafe.Pointer {
-	return wasmtime_memory_data(m.storeCtx, &m.val)
+	return m.bindings.wasmtime_memory_data(m.storeCtx, &m.val)
 }
 
 func (m *memory) DataSize(ctx context.Context) uintptr {
-	return wasmtime_memory_data_size(m.storeCtx, &m.val)
+	return m.bindings.wasmtime_memory_data_size(m.storeCtx, &m.val)
 }
 
 func (m *memory) Size(ctx context.Context) uint64 {
-	return wasmtime_memory_size(m.storeCtx, &m.val)
+	return m.bindings.wasmtime_memory_size(m.storeCtx, &m.val)
 }
 
 func (m *memory) Grow(ctx context.Context, delta uint64) (uint64, bool) {
 	var prevSize uint64
-	err := wasmtime_memory_grow(m.storeCtx, &m.val, delta, &prevSize)
+	err := m.bindings.wasmtime_memory_grow(m.storeCtx, &m.val, delta, &prevSize)
 	if err != 0 {
-		wasmtime_error_delete(err)
+		m.bindings.wasmtime_error_delete(err)
 		return 0, false
 	}
 	return prevSize, true
@@ -188,6 +193,7 @@ type function struct {
 	fnCache     api.FunctionDefinition
 	paramTypes  []api.ValueType
 	resultTypes []api.ValueType
+	bindings    *bindings
 }
 
 func (f *function) Definition() api.FunctionDefinition {
@@ -195,8 +201,8 @@ func (f *function) Definition() api.FunctionDefinition {
 		return f.fnCache
 	}
 
-	storeCtx := wasmtime_store_context(f.store)
-	funcType := wasmtime_func_type(storeCtx, &f.val)
+	storeCtx := f.bindings.wasmtime_store_context(f.store)
+	funcType := f.bindings.wasmtime_func_type(storeCtx, &f.val)
 	if funcType == 0 {
 		return &functionDefinition{
 			name:        f.name,
@@ -204,21 +210,21 @@ func (f *function) Definition() api.FunctionDefinition {
 			resultTypes: []api.ValueType{},
 		}
 	}
-	defer wasm_functype_delete(funcType)
+	defer f.bindings.wasm_functype_delete(funcType)
 
-	paramsVec := wasm_functype_params(funcType)
-	resultsVec := wasm_functype_results(funcType)
+	paramsVec := f.bindings.wasm_functype_params(funcType)
+	resultsVec := f.bindings.wasm_functype_results(funcType)
 
 	paramTypes := make([]api.ValueType, paramsVec.size)
 	for i := uintptr(0); i < paramsVec.size; i++ {
 		vt := (*wasm_valtype_t)(unsafe.Add(unsafe.Pointer(paramsVec.data), i*unsafe.Sizeof(uintptr(0))))
-		paramTypes[i] = wasmValueTypeToAPI(wasm_valtype_kind(*vt))
+		paramTypes[i] = wasmValueTypeToAPI(f.bindings.wasm_valtype_kind(*vt))
 	}
 
 	resultTypes := make([]api.ValueType, resultsVec.size)
 	for i := uintptr(0); i < resultsVec.size; i++ {
 		vt := (*wasm_valtype_t)(unsafe.Add(unsafe.Pointer(resultsVec.data), i*unsafe.Sizeof(uintptr(0))))
-		resultTypes[i] = wasmValueTypeToAPI(wasm_valtype_kind(*vt))
+		resultTypes[i] = wasmValueTypeToAPI(f.bindings.wasm_valtype_kind(*vt))
 	}
 
 	f.fnCache = &functionDefinition{
@@ -293,13 +299,13 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 	// Reset the trap pointer in the reused buffer
 	buf.Trap = nil
 
-	callErr := wasmtime_func_call(f.storeCtx, &f.val, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &buf.Trap)
+	callErr := f.bindings.wasmtime_func_call(f.storeCtx, &f.val, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &buf.Trap)
 
 	runtime.KeepAlive(f)
 	// buf is kept alive by the function scope reference
 
 	if callErr != 0 {
-		err := getErrorMessage(callErr, 0)
+		err := f.bindings.getErrorMessage(callErr, 0)
 		// Handle WASI exit(0) gracefully
 		if exitErr, ok := err.(*WASIExitError); ok && exitErr.ExitCode == 0 {
 			// Success exit - return results normally
@@ -308,7 +314,7 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 		}
 	}
 	if buf.Trap != nil {
-		return nil, fmt.Errorf("call failed (trap): %w", getErrorMessage(0, *buf.Trap))
+		return nil, fmt.Errorf("call failed (trap): %w", f.bindings.getErrorMessage(0, *buf.Trap))
 	}
 
 	// Convert results back to uint64

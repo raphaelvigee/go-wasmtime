@@ -10,7 +10,6 @@ import (
 )
 
 func TestModuleConfig(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)
@@ -140,7 +139,6 @@ func TestModuleConfig(t *testing.T) {
 }
 
 func TestCompiledModuleIntrospection(t *testing.T) {
-	require.NoError(t, Initialize())
 
 	r, err := NewRuntime(t.Context())
 	require.NoError(t, err)

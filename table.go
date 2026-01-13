@@ -12,6 +12,7 @@ type table struct {
 	val      wasmtime_table_t
 	store    wasmtime_store_t
 	storeCtx wasmtime_context_t
+	bindings *bindings
 }
 
 func (t *table) Type(ctx context.Context) api.ValueType {
@@ -21,7 +22,7 @@ func (t *table) Type(ctx context.Context) api.ValueType {
 }
 
 func (t *table) Size(ctx context.Context) uint32 {
-	return wasmtime_table_size(t.storeCtx, &t.val)
+	return t.bindings.wasmtime_table_size(t.storeCtx, &t.val)
 }
 
 func (t *table) Grow(ctx context.Context, delta uint32) (uint32, bool) {
@@ -30,7 +31,7 @@ func (t *table) Grow(ctx context.Context, delta uint32) (uint32, bool) {
 	var val wasmtime_val_t
 	val.kind = WASM_FUNCREF
 
-	err := wasmtime_table_grow(t.storeCtx, &t.val, delta, &val, &prevSize)
+	err := t.bindings.wasmtime_table_grow(t.storeCtx, &t.val, delta, &val, &prevSize)
 	if err != 0 {
 		return 0, false
 	}
@@ -39,7 +40,7 @@ func (t *table) Grow(ctx context.Context, delta uint32) (uint32, bool) {
 
 func (t *table) Get(ctx context.Context, index uint32) uint64 {
 	var val wasmtime_val_t
-	ok := wasmtime_table_get(t.storeCtx, &t.val, index, &val)
+	ok := t.bindings.wasmtime_table_get(t.storeCtx, &t.val, index, &val)
 	if !ok {
 		return 0
 	}
@@ -68,7 +69,7 @@ func (t *table) Set(ctx context.Context, index uint32, v uint64) error {
 
 	val.SetFuncRef(funcRef)
 
-	ok := wasmtime_table_set(t.storeCtx, &t.val, index, &val)
+	ok := t.bindings.wasmtime_table_set(t.storeCtx, &t.val, index, &val)
 	if !ok {
 		return fmt.Errorf("failed to set table element at index %d", index)
 	}
