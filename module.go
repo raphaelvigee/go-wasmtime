@@ -48,10 +48,11 @@ func (m *module) ExportedFunction(name string) api.Function {
 
 	funcPtr := ext.AsFunc()
 	f := &function{
-		name:    name,
-		ptr:     funcPtr,
-		store:   m.store,
-		fnCache: nil,
+		name:     name,
+		val:      *funcPtr,
+		store:    m.store,
+		storeCtx: 0, // will be set below
+		fnCache:  nil,
 	}
 
 	// Pre-populate definition to cache types
@@ -95,7 +96,7 @@ func (m *module) getExport(name string) (*wasmtime_extern_t, error) {
 // function implements api.Function.
 type function struct {
 	name        string
-	ptr         *wasmtime_func_t
+	val         wasmtime_func_t
 	store       wasmtime_store_t
 	storeCtx    wasmtime_context_t
 	fnCache     api.FunctionDefinition
@@ -109,7 +110,7 @@ func (f *function) Definition() api.FunctionDefinition {
 	}
 
 	storeCtx := wasmtime_store_context(f.store)
-	funcType := wasmtime_func_type(storeCtx, f.ptr)
+	funcType := wasmtime_func_type(storeCtx, &f.val)
 	if funcType == 0 {
 		return &functionDefinition{
 			name:        f.name,
@@ -206,7 +207,7 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 	// Reset the trap pointer in the reused buffer
 	buf.Trap = nil
 
-	callErr := wasmtime_func_call(f.storeCtx, f.ptr, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &buf.Trap)
+	callErr := wasmtime_func_call(f.storeCtx, &f.val, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &buf.Trap)
 
 	runtime.KeepAlive(f)
 	// buf is kept alive by the function scope reference
