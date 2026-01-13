@@ -48,10 +48,12 @@ func NewInstance(store *Store, module *Module, imports []wasmtime_extern_t) (*In
 
 // GetExport gets an exported item by name
 func (i *Instance) GetExport(name string) (*wasmtime_extern_t, error) {
-	var ext wasmtime_extern_t
-	nameBytes := []byte(name)
+	// CRITICAL: Must allocate on heap because we return a pointer!
+	// Stack variables become invalid after function returns
+	ext := new(wasmtime_extern_t)
 
-	ok := wasmtime_instance_export_get(i.store.Context(), &i.inst, &nameBytes[0], uintptr(len(name)), &ext)
+	nameByte := []byte(name + "\000")
+	ok := wasmtime_instance_export_get(i.store.Context(), &i.inst, &nameByte[0], uintptr(len(name)), ext)
 
 	runtime.KeepAlive(i.store)
 	runtime.KeepAlive(name)
@@ -60,7 +62,7 @@ func (i *Instance) GetExport(name string) (*wasmtime_extern_t, error) {
 		return nil, fmt.Errorf("export %q not found", name)
 	}
 
-	return &ext, nil
+	return ext, nil
 }
 
 // Call calls an exported function by name
@@ -85,7 +87,20 @@ func (i *Instance) Call(name string, args ...interface{}) ([]interface{}, error)
 		wasmArgs = append(wasmArgs, val)
 	}
 
-	// Call the function (for now, assume no results for simplicity)
+	// Prepare result buffer - for now support up to 1 result
+	// TODO: Fix result handling - there's a crash when requesting results
+	// For now, call without results and return empty array
+	/*
+		var results [1]wasmtime_val_t
+		var resultsPtr *wasmtime_val_t
+		numResults := uintptr(1) // Most functions return 0 or 1 value
+
+		if numResults > 0 {
+			resultsPtr = &results[0]
+		}
+	*/
+
+	// Call the function
 	var trap *wasm_trap_t
 	var argsPtr *wasmtime_val_t
 	if len(wasmArgs) > 0 {
@@ -93,12 +108,44 @@ func (i *Instance) Call(name string, args ...interface{}) ([]interface{}, error)
 	}
 
 	funcPtr := ext.AsFunc()
-	callErr := wasmtime_func_call(i.store.Context(), funcPtr, argsPtr, uintptr(len(wasmArgs)), nil, 0, &trap)
+
+	// Debug: Inspect raw bytes at funcPtr location
+	fmt.Printf("DEBUG: ext pointer: %p\n", ext)
+	fmt.Printf("DEBUG: funcPtr pointer: %p\n", funcPtr)
+	extRaw := (*[32]byte)(unsafe.Pointer(ext))
+	fmt.Printf("DEBUG: ext raw bytes: % x\n", extRaw[:])
+	funcRaw := (*[16]byte)(unsafe.Pointer(funcPtr))
+	fmt.Printf("DEBUG: funcPtr raw bytes: % x\n", funcRaw[:])
+
+	// Debug: check what we're about to call
+	fmt.Printf("DEBUG: Calling function with:\n")
+	fmt.Printf("  Context: %#v\n", i.store.Context())
+	fmt.Printf("  FuncPtr: %#v\n", funcPtr)
+	fmt.Printf("  FuncPtr.store_id: %d\n", funcPtr.store_id)
+	fmt.Printf("  FuncPtr.__private: %#v\n", funcPtr.__private)
+	fmt.Printf("  Args: %d\n", len(wasmArgs))
+
+	// Debug: check arguments being passed
+	if len(wasmArgs) > 0 {
+		fmt.Printf("DEBUG: Passing %d arguments:\n", len(wasmArgs))
+		for i, arg := range wasmArgs {
+			argBytes := (*[24]byte)(unsafe.Pointer(&arg))
+			fmt.Printf("  Arg %d: kind=%d, bytes=% x\n", i, arg.kind, argBytes[:])
+		}
+	}
+
+	// Prepare result buffer
+	var results [1]wasmtime_val_t
+	numResults := uintptr(1)
+
+	// Call the function WITH results
+	callErr := wasmtime_func_call(i.store.Context(), funcPtr, argsPtr, uintptr(len(wasmArgs)), &results[0], numResults, &trap)
 
 	// Keep objects alive during C call
 	runtime.KeepAlive(i.store)
 	runtime.KeepAlive(name)
 	runtime.KeepAlive(wasmArgs)
+	runtime.KeepAlive(results)
 
 	if callErr != 0 {
 		return nil, fmt.Errorf("call failed: %s", getErrorMessage(callErr, 0))
@@ -107,19 +154,48 @@ func (i *Instance) Call(name string, args ...interface{}) ([]interface{}, error)
 		return nil, fmt.Errorf("call failed (trap): %s", getErrorMessage(0, *trap))
 	}
 
-	return nil, nil
+	// Convert results back to Go values
+	goResults := make([]interface{}, 0, numResults)
+	for idx := uintptr(0); idx < numResults; idx++ {
+		val, err := fromWasmValue(&results[idx])
+		if err != nil {
+			return nil, fmt.Errorf("failed to convert result: %w", err)
+		}
+		goResults = append(goResults, val)
+	}
+
+	return goResults, nil
 }
 
 // toWasmValue converts a Go value to a wasmtime value
 func toWasmValue(v interface{}) (wasmtime_val_t, error) {
+	var result wasmtime_val_t
+	// Zero-init padding to avoid garbage
+	*(*[24]byte)(unsafe.Pointer(&result)) = [24]byte{}
+
 	switch val := v.(type) {
 	case int32:
-		return wasmtime_val_t{kind: 0, of: wasmtime_val_raw{i64: int64(val)}}, nil
+		result.SetI32(val)
+		return result, nil
 	case int64:
-		return wasmtime_val_t{kind: 1, of: wasmtime_val_raw{i64: val}}, nil
+		result.SetI64(val)
+		return result, nil
 	case int:
-		return wasmtime_val_t{kind: 0, of: wasmtime_val_raw{i64: int64(val)}}, nil
+		result.SetI32(int32(val))
+		return result, nil
 	default:
 		return wasmtime_val_t{}, fmt.Errorf("unsupported type: %T", v)
+	}
+}
+
+// fromWasmValue converts a wasmtime value back to a Go value
+func fromWasmValue(v *wasmtime_val_t) (interface{}, error) {
+	switch v.kind {
+	case 0: // i32
+		return v.GetI32(), nil
+	case 1: // i64
+		return v.GetI64(), nil
+	default:
+		return nil, fmt.Errorf("unsupported wasm type: %d", v.kind)
 	}
 }

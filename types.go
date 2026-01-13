@@ -62,14 +62,41 @@ type wasm_byte_vec_t struct {
 }
 
 // wasmtime_val_raw represents a raw WebAssembly value
+// This is a union in C. The largest member is wasmtime_anyref_t (24 bytes),
+// NOT v128 (16 bytes) as I initially thought!
 type wasmtime_val_raw struct {
-	i64 int64
+	data [24]byte // Union size must match C: sizeof(wasmtime_valunion_t) = 24
 }
 
 // wasmtime_val_t represents a WebAssembly value with its type
+// The C struct has padding for alignment
+// Total size: 1 + 7 + 24 = 32 bytes
 type wasmtime_val_t struct {
-	kind uint8
-	of   wasmtime_val_raw
+	kind     uint8            // 1 byte at offset 0
+	_padding [7]byte          // 7 bytes padding at offset 1-7
+	of       wasmtime_val_raw // 24 bytes at offset 8
+}
+
+// Helper to get i32 from wasmtime_val_t
+func (v *wasmtime_val_t) GetI32() int32 {
+	return *(*int32)(unsafe.Pointer(&v.of.data[0]))
+}
+
+// Helper to set i32 in wasmtime_val_t
+func (v *wasmtime_val_t) SetI32(val int32) {
+	v.kind = 0
+	*(*int32)(unsafe.Pointer(&v.of.data[0])) = val
+}
+
+// Helper to get i64 from wasmtime_val_t
+func (v *wasmtime_val_t) GetI64() int64 {
+	return *(*int64)(unsafe.Pointer(&v.of.data[0]))
+}
+
+// Helper to set i64 in wasmtime_val_t
+func (v *wasmtime_val_t) SetI64(val int64) {
+	v.kind = 1
+	*(*int64)(unsafe.Pointer(&v.of.data[0])) = val
 }
 
 // wasmtime_extern_kind_t enum values
@@ -93,9 +120,12 @@ type wasmtime_extern_union struct {
 }
 
 // wasmtime_extern_t represents an external item (function, memory, etc.)
+// The C compiler adds automatic padding to align the union (which contains uint64).
+// Even though the C header shows them adjacent, the actual memory layout has padding.
 type wasmtime_extern_t struct {
-	kind wasmtime_extern_kind_t
-	of   wasmtime_extern_union
+	kind     wasmtime_extern_kind_t // uint8 at offset 0
+	_padding [7]byte                // CRITICAL: Padding at offset 1-7 for alignment
+	of       wasmtime_extern_union  // Union at offset 8
 }
 
 // Helper to get func from extern
