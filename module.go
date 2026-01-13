@@ -59,6 +59,7 @@ func (m *module) ExportedFunction(name string) api.Function {
 	def := f.Definition()
 	f.paramTypes = def.ParamTypes()
 	f.resultTypes = def.ResultTypes()
+	f.storeCtx = wasmtime_store_context(f.store)
 
 	return f
 }
@@ -97,6 +98,7 @@ type function struct {
 	name        string
 	ptr         *wasmtime_func_t
 	store       wasmtime_store_t
+	storeCtx    wasmtime_context_t
 	fnCache     api.FunctionDefinition
 	paramTypes  []api.ValueType
 	resultTypes []api.ValueType
@@ -152,12 +154,28 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 	defer bufferPool.Put(buf)
 
 	// Prepare params
-	buf.Params = buf.Params[:0]
-	if cap(buf.Params) < len(params) {
-		buf.Params = make([]wasmtime_val_t, 0, len(params))
-	}
+	buf.Params = buf.Params[:len(params)]
 	for i, param := range params {
-		buf.Params = append(buf.Params, encodeToWasmValue(param, f.paramTypes[i]))
+		// Inline encodeToWasmValue
+		// Optimization: Skip zero-init of padding since we override the value anyway
+		// and C API ignores padding.
+		vt := f.paramTypes[i]
+		switch vt {
+		case api.ValueTypeI32:
+			buf.Params[i].SetI32(DecodeI32(param))
+		case api.ValueTypeI64:
+			buf.Params[i].SetI64(DecodeI64(param))
+		case api.ValueTypeF32:
+			buf.Params[i].SetF32(DecodeF32(param))
+		case api.ValueTypeF64:
+			buf.Params[i].SetF64(DecodeF64(param))
+		case api.ValueTypeV128:
+			buf.Params[i].SetI64(int64(param))
+		case api.ValueTypeFuncref:
+			buf.Params[i].SetFuncRef(wasmtime_func_t{})
+		case api.ValueTypeExternref:
+			buf.Params[i].SetExternRef(uintptr(param))
+		}
 	}
 
 	// Prepare results
@@ -180,8 +198,7 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 	}
 
 	var trap *wasm_trap_t
-	storeCtx := wasmtime_store_context(f.store)
-	callErr := wasmtime_func_call(storeCtx, f.ptr, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &trap)
+	callErr := wasmtime_func_call(f.storeCtx, f.ptr, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &trap)
 
 	runtime.KeepAlive(f)
 	// buf is kept alive by the function scope reference
@@ -205,7 +222,26 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 	// Optimizing this further would require changing the API to accept a result buffer
 	resultValues := make([]uint64, numResults)
 	for i := 0; i < numResults; i++ {
-		resultValues[i] = decodeFromWasmValue(&buf.Results[i])
+		// Inline decodeFromWasmValue
+		val := &buf.Results[i]
+		switch val.kind {
+		case WASM_I32:
+			resultValues[i] = EncodeI32(val.GetI32())
+		case WASM_I64:
+			resultValues[i] = EncodeI64(val.GetI64())
+		case WASM_F32:
+			resultValues[i] = EncodeF32(val.GetF32())
+		case WASM_F64:
+			resultValues[i] = EncodeF64(val.GetF64())
+		case WASM_V128:
+			resultValues[i] = uint64(val.GetI64())
+		case WASM_FUNCREF:
+			resultValues[i] = 0
+		case WASM_EXTERNREF:
+			resultValues[i] = uint64(val.GetExternRef())
+		default:
+			resultValues[i] = 0
+		}
 	}
 
 	return resultValues, nil
