@@ -25,6 +25,7 @@ type wasm_valkind_t = uint8
 type wasmtime_func_t struct {
 	store_id  uint64
 	__private uintptr
+	__padding uint64 // Padding to match memory layout
 }
 
 // wasmtime_table_t - From C header
@@ -32,6 +33,7 @@ type wasmtime_table_t struct {
 	store_id   uint64
 	__private1 uint32
 	__private2 uint32
+	__padding  uint64 // Padding to match memory layout
 }
 
 // wasmtime_memory_t - From C header
@@ -39,6 +41,7 @@ type wasmtime_memory_t struct {
 	store_id   uint64
 	__private1 uint32
 	__private2 uint32
+	__padding  uint64 // Padding to match memory layout
 }
 
 // wasmtime_global_t - From C header
@@ -47,6 +50,7 @@ type wasmtime_global_t struct {
 	__private1 uint32
 	__private2 uint32
 	__private3 uint32
+	__padding  uint32 // Padding to align to 8 bytes and match size
 }
 
 // wasmtime_instance_t - From C header: struct with store_id and __private size_t
@@ -58,6 +62,7 @@ type wasmtime_global_t struct {
 type wasmtime_instance_t struct {
 	store_id  uint64
 	__private uintptr // size_t in C
+	__padding uint64  // Padding to match memory layout
 }
 
 // wasm_byte_vec_t represents a vector of bytes in C
@@ -190,10 +195,10 @@ const (
 // - wasmtime_func_t: 16 bytes (uint64 + uintptr)
 // - wasmtime_table_t: 16 bytes
 // - wasmtime_memory_t: 16 bytes
-// - wasmtime_global_t: 20 bytes (uint64 + 3*uint32)
-// So we need 20 bytes, but let's use 24 for alignment (8-byte aligned)
+// - wasmtime_global_t: 24 bytes (uint64 + 3*uint32 + padding)
+// So we need 32 bytes to be safe and aligned
 type wasmtime_extern_union struct {
-	data [24]byte // Raw union data - reinterpret as needed
+	data [32]byte // Raw union data - reinterpret as needed
 }
 
 // wasmtime_extern_t represents an external item (function, memory, etc.)

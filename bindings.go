@@ -3,6 +3,7 @@ package wasmtime
 import (
 	"fmt"
 	"sync"
+	"unsafe"
 
 	"github.com/ebitengine/purego"
 )
@@ -57,6 +58,12 @@ var (
 	wasmtime_linker_delete      func(wasmtime_linker_t)
 	wasmtime_linker_define_wasi func(wasmtime_linker_t) wasmtime_error_t
 	wasmtime_linker_instantiate func(wasmtime_linker_t, wasmtime_context_t, wasmtime_module_t, *wasmtime_instance_t, **wasm_trap_t) wasmtime_error_t
+
+	// Function pointers - Memory
+	wasmtime_memory_data      func(wasmtime_context_t, *wasmtime_memory_t) unsafe.Pointer
+	wasmtime_memory_data_size func(wasmtime_context_t, *wasmtime_memory_t) uintptr
+	wasmtime_memory_size      func(wasmtime_context_t, *wasmtime_memory_t) uint64
+	wasmtime_memory_grow      func(wasmtime_context_t, *wasmtime_memory_t, uint64, *uint64) wasmtime_error_t
 
 	initOnce sync.Once
 	initErr  error
@@ -143,6 +150,12 @@ func registerFunctions() error {
 	purego.RegisterLibFunc(&wasmtime_linker_delete, libHandle, "wasmtime_linker_delete")
 	purego.RegisterLibFunc(&wasmtime_linker_define_wasi, libHandle, "wasmtime_linker_define_wasi")
 	purego.RegisterLibFunc(&wasmtime_linker_instantiate, libHandle, "wasmtime_linker_instantiate")
+
+	// Memory functions
+	purego.RegisterLibFunc(&wasmtime_memory_data, libHandle, "wasmtime_memory_data")
+	purego.RegisterLibFunc(&wasmtime_memory_data_size, libHandle, "wasmtime_memory_data_size")
+	purego.RegisterLibFunc(&wasmtime_memory_size, libHandle, "wasmtime_memory_size")
+	purego.RegisterLibFunc(&wasmtime_memory_grow, libHandle, "wasmtime_memory_grow")
 
 	return nil
 }

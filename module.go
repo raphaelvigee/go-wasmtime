@@ -93,6 +93,52 @@ func (m *module) getExport(name string) (*wasmtime_extern_t, error) {
 	return ext, nil
 }
 
+func (m *module) ExportedMemory(name string) api.Memory {
+	ext, err := m.getExport(name)
+	if err != nil {
+		return nil
+	}
+
+	if ext.kind != WASMTIME_EXTERN_MEMORY {
+		return nil
+	}
+
+	memPtr := ext.AsMemory()
+	return &memory{
+		val:      *memPtr,
+		store:    m.store,
+		storeCtx: wasmtime_store_context(m.store),
+	}
+}
+
+type memory struct {
+	val      wasmtime_memory_t
+	store    wasmtime_store_t
+	storeCtx wasmtime_context_t
+}
+
+func (m *memory) Data(ctx context.Context) unsafe.Pointer {
+	return wasmtime_memory_data(m.storeCtx, &m.val)
+}
+
+func (m *memory) DataSize(ctx context.Context) uintptr {
+	return wasmtime_memory_data_size(m.storeCtx, &m.val)
+}
+
+func (m *memory) Size(ctx context.Context) uint64 {
+	return wasmtime_memory_size(m.storeCtx, &m.val)
+}
+
+func (m *memory) Grow(ctx context.Context, delta uint64) (uint64, bool) {
+	var prevSize uint64
+	err := wasmtime_memory_grow(m.storeCtx, &m.val, delta, &prevSize)
+	if err != 0 {
+		wasmtime_error_delete(err)
+		return 0, false
+	}
+	return prevSize, true
+}
+
 // function implements api.Function.
 type function struct {
 	name        string

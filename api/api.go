@@ -1,6 +1,9 @@
 package api
 
-import "context"
+import (
+	"context"
+	"unsafe"
+)
 
 // Module is an instantiated WebAssembly module.
 type Module interface {
@@ -12,6 +15,9 @@ type Module interface {
 
 	// ExportedFunctionDefinitions returns all exported function definitions.
 	ExportedFunctionDefinitions() map[string]FunctionDefinition
+
+	// ExportedMemory returns an exported memory by name, or nil if not found.
+	ExportedMemory(name string) Memory
 
 	// Close closes the module and releases associated resources.
 	Close(ctx context.Context) error
@@ -25,6 +31,22 @@ type Function interface {
 	// Call invokes the function with the given parameters.
 	// Parameters and results are encoded as uint64 values.
 	Call(ctx context.Context, params ...uint64) ([]uint64, error)
+}
+
+// Memory is an exported WebAssembly memory.
+type Memory interface {
+	// Data returns a pointer to the beginning of the memory.
+	Data(ctx context.Context) unsafe.Pointer
+
+	// DataSize returns the size of the memory in bytes.
+	DataSize(ctx context.Context) uintptr
+
+	// Size returns the size of the memory in pages.
+	Size(ctx context.Context) uint64
+
+	// Grow grows the memory by the given number of pages.
+	// Returns the previous size in pages, or false if failed.
+	Grow(ctx context.Context, delta uint64) (uint64, bool)
 }
 
 // FunctionDefinition describes a function's signature.
