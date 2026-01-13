@@ -11,17 +11,16 @@ import (
 )
 
 type callBuffer struct {
-	Params       []wasmtime_val_t
-	Results      []wasmtime_val_t
-	ResultValues []uint64
+	Params  []wasmtime_val_t
+	Results []wasmtime_val_t
+	Trap    *wasm_trap_t
 }
 
 var bufferPool = sync.Pool{
 	New: func() interface{} {
 		return &callBuffer{
-			Params:       make([]wasmtime_val_t, 0, 8),
-			Results:      make([]wasmtime_val_t, 0, 1),
-			ResultValues: make([]uint64, 0, 1),
+			Params:  make([]wasmtime_val_t, 0, 8),
+			Results: make([]wasmtime_val_t, 0, 1),
 		}
 	},
 }
@@ -162,19 +161,26 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 		vt := f.paramTypes[i]
 		switch vt {
 		case api.ValueTypeI32:
-			buf.Params[i].SetI32(DecodeI32(param))
+			buf.Params[i].kind = WASM_I32
+			*(*int32)(unsafe.Pointer(&buf.Params[i].of.data[0])) = int32(param)
 		case api.ValueTypeI64:
-			buf.Params[i].SetI64(DecodeI64(param))
+			buf.Params[i].kind = WASM_I64
+			*(*int64)(unsafe.Pointer(&buf.Params[i].of.data[0])) = int64(param)
 		case api.ValueTypeF32:
-			buf.Params[i].SetF32(DecodeF32(param))
+			buf.Params[i].kind = WASM_F32
+			*(*float32)(unsafe.Pointer(&buf.Params[i].of.data[0])) = *(*float32)(unsafe.Pointer(&param))
 		case api.ValueTypeF64:
-			buf.Params[i].SetF64(DecodeF64(param))
+			buf.Params[i].kind = WASM_F64
+			*(*float64)(unsafe.Pointer(&buf.Params[i].of.data[0])) = *(*float64)(unsafe.Pointer(&param))
 		case api.ValueTypeV128:
-			buf.Params[i].SetI64(int64(param))
+			buf.Params[i].kind = WASM_V128
+			*(*int64)(unsafe.Pointer(&buf.Params[i].of.data[0])) = int64(param)
 		case api.ValueTypeFuncref:
-			buf.Params[i].SetFuncRef(wasmtime_func_t{})
+			buf.Params[i].kind = WASM_FUNCREF
+			*(*wasmtime_func_t)(unsafe.Pointer(&buf.Params[i].of.data[0])) = wasmtime_func_t{}
 		case api.ValueTypeExternref:
-			buf.Params[i].SetExternRef(uintptr(param))
+			buf.Params[i].kind = WASM_EXTERNREF
+			*(*uintptr)(unsafe.Pointer(&buf.Params[i].of.data[0])) = uintptr(param)
 		}
 	}
 
@@ -197,8 +203,10 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 		paramsPtr = &buf.Params[0]
 	}
 
-	var trap *wasm_trap_t
-	callErr := wasmtime_func_call(f.storeCtx, f.ptr, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &trap)
+	// Reset the trap pointer in the reused buffer
+	buf.Trap = nil
+
+	callErr := wasmtime_func_call(f.storeCtx, f.ptr, paramsPtr, uintptr(len(buf.Params)), resultsPtr, uintptr(numResults), &buf.Trap)
 
 	runtime.KeepAlive(f)
 	// buf is kept alive by the function scope reference
@@ -212,8 +220,8 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 			return nil, fmt.Errorf("call failed: %w", err)
 		}
 	}
-	if trap != nil {
-		return nil, fmt.Errorf("call failed (trap): %w", getErrorMessage(0, *trap))
+	if buf.Trap != nil {
+		return nil, fmt.Errorf("call failed (trap): %w", getErrorMessage(0, *buf.Trap))
 	}
 
 	// Convert results back to uint64
@@ -226,19 +234,21 @@ func (f *function) Call(ctx context.Context, params ...uint64) ([]uint64, error)
 		val := &buf.Results[i]
 		switch val.kind {
 		case WASM_I32:
-			resultValues[i] = EncodeI32(val.GetI32())
+			resultValues[i] = uint64(uint32(*(*int32)(unsafe.Pointer(&val.of.data[0]))))
 		case WASM_I64:
-			resultValues[i] = EncodeI64(val.GetI64())
+			resultValues[i] = uint64(*(*int64)(unsafe.Pointer(&val.of.data[0])))
 		case WASM_F32:
-			resultValues[i] = EncodeF32(val.GetF32())
+			f32 := *(*float32)(unsafe.Pointer(&val.of.data[0]))
+			resultValues[i] = uint64(*(*uint32)(unsafe.Pointer(&f32)))
 		case WASM_F64:
-			resultValues[i] = EncodeF64(val.GetF64())
+			f64 := *(*float64)(unsafe.Pointer(&val.of.data[0]))
+			resultValues[i] = *(*uint64)(unsafe.Pointer(&f64))
 		case WASM_V128:
-			resultValues[i] = uint64(val.GetI64())
+			resultValues[i] = uint64(*(*int64)(unsafe.Pointer(&val.of.data[0])))
 		case WASM_FUNCREF:
 			resultValues[i] = 0
 		case WASM_EXTERNREF:
-			resultValues[i] = uint64(val.GetExternRef())
+			resultValues[i] = uint64(*(*uintptr)(unsafe.Pointer(&val.of.data[0])))
 		default:
 			resultValues[i] = 0
 		}
@@ -296,58 +306,5 @@ func wasmValueTypeToAPI(kind wasm_valkind_t) api.ValueType {
 		return api.ValueTypeExternref
 	default:
 		return api.ValueTypeI32 // Default fallback
-	}
-}
-
-func encodeToWasmValue(v uint64, vt api.ValueType) wasmtime_val_t {
-	var result wasmtime_val_t
-	// Optimization: Skip zero-init of padding since we override the value anyway
-	// and C API ignores padding.
-
-	switch vt {
-	case api.ValueTypeI32:
-		result.SetI32(DecodeI32(v))
-	case api.ValueTypeI64:
-		result.SetI64(DecodeI64(v))
-	case api.ValueTypeF32:
-		result.SetF32(DecodeF32(v))
-	case api.ValueTypeF64:
-		result.SetF64(DecodeF64(v))
-	case api.ValueTypeV128:
-		// V128 requires special handling - for now just set as i64
-		result.SetI64(int64(v))
-	case api.ValueTypeFuncref:
-		// Funcref - for now, just pass through as zero
-		// TODO: Proper funcref handling would require more complex support
-		result.SetFuncRef(wasmtime_func_t{})
-	case api.ValueTypeExternref:
-		// Externref - pass through as direct uintptr
-		result.SetExternRef(uintptr(v))
-	}
-
-	return result
-}
-
-func decodeFromWasmValue(v *wasmtime_val_t) uint64 {
-	switch v.kind {
-	case WASM_I32:
-		return EncodeI32(v.GetI32())
-	case WASM_I64:
-		return EncodeI64(v.GetI64())
-	case WASM_F32:
-		return EncodeF32(v.GetF32())
-	case WASM_F64:
-		return EncodeF64(v.GetF64())
-	case WASM_V128:
-		// V128 requires special handling
-		return uint64(v.GetI64())
-	case WASM_FUNCREF:
-		// Funcref - return zero for now
-		// TODO: Proper funcref handling
-		return 0
-	case WASM_EXTERNREF:
-		return uint64(v.GetExternRef())
-	default:
-		return 0
 	}
 }
